@@ -24,7 +24,7 @@ namespace FirmwareKit.PartitionTable.Cli
                     case "write":
                         return ExecuteWrite(args);
                     default:
-                        Console.Error.WriteLine($"未知命令：{command}");
+                        Console.Error.WriteLine($"Unknown command: {command}");
                         PrintUsage();
                         return 2;
                 }
@@ -49,7 +49,7 @@ namespace FirmwareKit.PartitionTable.Cli
 
             if (!File.Exists(path))
             {
-                Console.Error.WriteLine($"文件不存在：{path}");
+                Console.Error.WriteLine($"File not found: {path}");
                 return 3;
             }
 
@@ -58,27 +58,27 @@ namespace FirmwareKit.PartitionTable.Cli
             Console.WriteLine($"类型: {table.Type}");
             Console.WriteLine($"是否可变: {table.IsMutable}");
 
-            if (table.Type == PartitionTableType.Mbr && table is PartitionTableParser.MbrPartitionTable mbr)
+            if (table.Type == PartitionTableType.Mbr && table is MbrPartitionTable mbr)
             {
                 for (int i = 0; i < mbr.Partitions.Length; i++)
                 {
                     var entry = mbr.Partitions[i];
-                    Console.WriteLine($"MBR分区[{i}] 类型: 0x{entry.PartitionType:X2} 首LBA: {entry.FirstLba} 长度: {entry.SectorCount}");
+                    Console.WriteLine($"MBR partition[{i}] Type: 0x{entry.PartitionType:X2} FirstLBA: {entry.FirstLba} Length: {entry.SectorCount}");
                 }
             }
-            else if (table.Type == PartitionTableType.Gpt && table is PartitionTableParser.GptPartitionTable gpt)
+            else if (table.Type == PartitionTableType.Gpt && table is GptPartitionTable gpt)
             {
                 Console.WriteLine($"DiskGuid: {gpt.DiskGuid}");
-                Console.WriteLine($"可用扇区: {gpt.FirstUsableLba}-{gpt.LastUsableLba}");
+                Console.WriteLine($"Usable sectors: {gpt.FirstUsableLba}-{gpt.LastUsableLba}");
                 for (int i = 0; i < gpt.Partitions.Count; i++)
                 {
                     var entry = gpt.Partitions[i];
-                    Console.WriteLine($"GPT分区[{i}] 类型: {entry.PartitionType} Id: {entry.PartitionId} {entry.FirstLba}-{entry.LastLba} 名称: {entry.Name}");
+                    Console.WriteLine($"GPT partition[{i}] Type: {entry.PartitionType} Id: {entry.PartitionId} {entry.FirstLba}-{entry.LastLba} Name: {entry.Name}");
                 }
             }
             else
             {
-                Console.WriteLine("未知分区表类型");
+                Console.WriteLine("Unknown partition table type");
             }
             return 0;
         }
@@ -97,7 +97,7 @@ namespace FirmwareKit.PartitionTable.Cli
 
             if (!File.Exists(src))
             {
-                Console.Error.WriteLine($"源文件不存在：{src}");
+                Console.Error.WriteLine($"Source file not found: {src}");
                 return 3;
             }
 
@@ -105,20 +105,20 @@ namespace FirmwareKit.PartitionTable.Cli
             var table = PartitionTableReader.FromStream(stream, mutable);
             if (!table.IsMutable)
             {
-                Console.Error.WriteLine("分区表为只读，无法写入");
+                Console.Error.WriteLine("The partition table is read-only and cannot be written.");
                 return 4;
             }
 
             using var outStream = File.Open(dest, FileMode.OpenOrCreate, FileAccess.ReadWrite);
             table.WriteToStream(outStream);
-            Console.WriteLine($"写入完成: {dest}");
+            Console.WriteLine($"Write completed: {dest}");
             return 0;
         }
 
         private static void PrintUsage()
         {
             Console.WriteLine("FirmwareKit.PartitionTable.Cli");
-            Console.WriteLine("用法:");
+            Console.WriteLine("Usage:");
             Console.WriteLine("  read <path> [--mutable]");
             Console.WriteLine("  write <src> <dest> [--mutable]");
         }

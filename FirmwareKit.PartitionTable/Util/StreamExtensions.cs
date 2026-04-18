@@ -15,7 +15,9 @@ namespace FirmwareKit.PartitionTable
             {
                 int read = stream.Read(buffer, offset + totalRead, count - totalRead);
                 if (read == 0)
-                    throw new EndOfStreamException("未能读取足够的数据");
+                {
+                    throw new EndOfStreamException("Unable to read enough data from the stream.");
+                }
 
                 totalRead += read;
             }
