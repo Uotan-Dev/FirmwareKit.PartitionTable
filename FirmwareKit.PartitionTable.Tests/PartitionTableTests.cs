@@ -41,6 +41,17 @@ namespace FirmwareKit.PartitionTable.Tests
         }
 
         [Fact]
+        public void Mbr_WithInvalidPartitionStatus_IsRejected()
+        {
+            var image = CreateEmptyMbrImage();
+            image[446] = 0x7F;
+
+            using var ms = new MemoryStream(image);
+
+            Assert.Throws<InvalidDataException>(() => PartitionTableReader.FromStream(ms));
+        }
+
+        [Fact]
         public void Parse_MbrTable_MutableFlagAndWriteReadback()
         {
             var mbr = CreateEmptyMbrImage();
@@ -94,6 +105,87 @@ namespace FirmwareKit.PartitionTable.Tests
         }
 
         [Fact]
+        public void AutoDetects_Gpt_With_8192_SectorSize()
+        {
+            var image = CreateSampleGptImage(8192);
+
+            using var stream = new MemoryStream(image);
+            var table = PartitionTableReader.FromStream(stream, mutable: false);
+
+            var gpt = Assert.IsType<GptPartitionTable>(table);
+            Assert.Equal(8192, gpt.SectorSize);
+            Assert.Equal(PartitionTableType.Gpt, gpt.Type);
+            Assert.Single(gpt.Partitions);
+        }
+
+        [Fact]
+        public void Invalid_Gpt_WithOverflowingEntryTableOffset_IsRejectedAsInvalidData()
+        {
+            var image = CreateSampleGptImage(512);
+
+            image[510] = 0;
+            image[511] = 0;
+
+            byte[] overflowingOffset = BitConverter.GetBytes(ulong.MaxValue);
+            Buffer.BlockCopy(overflowingOffset, 0, image, 512 + 72, overflowingOffset.Length);
+
+            using var stream = new MemoryStream(image);
+
+            Assert.Throws<InvalidDataException>(() => PartitionTableReader.FromStream(stream, mutable: false));
+        }
+
+        [Fact]
+        public void Parse_Gpt_WithPreferredSectorSize_8192_MustSucceed()
+        {
+            var image = CreateSampleGptImage(8192);
+
+            using var stream = new MemoryStream(image);
+            var table = PartitionTableReader.FromStream(stream, mutable: false, sectorSize: 8192);
+
+            var gpt = Assert.IsType<GptPartitionTable>(table);
+            Assert.Equal(8192, gpt.SectorSize);
+            Assert.Single(gpt.Partitions);
+        }
+
+        [Fact]
+        public void Parse_WithNonPositivePreferredSectorSize_Throws()
+        {
+            var image = CreateEmptyMbrImage();
+
+            using var stream = new MemoryStream(image);
+            Assert.Throws<ArgumentOutOfRangeException>(() => PartitionTableReader.FromStream(stream, mutable: false, sectorSize: 0));
+        }
+
+        [Theory]
+        [InlineData(12, 600u)]
+        [InlineData(84, 40u)]
+        public void Invalid_Gpt_HeaderFields_AreRejected(int fieldOffset, uint value)
+        {
+            var image = CreateSampleGptImage(512);
+            image[510] = 0;
+            image[511] = 0;
+
+            WriteUInt32(image, 512 + fieldOffset, value);
+
+            using var stream = new MemoryStream(image);
+            Assert.Throws<InvalidDataException>(() => PartitionTableReader.FromStream(stream, mutable: false));
+        }
+
+        [Fact]
+        public void Invalid_Gpt_WithOverflowingEntryTableLength_IsRejected()
+        {
+            var image = CreateSampleGptImage(512);
+            image[510] = 0;
+            image[511] = 0;
+
+            WriteUInt32(image, 512 + 80, uint.MaxValue);
+            WriteUInt32(image, 512 + 84, 128);
+
+            using var stream = new MemoryStream(image);
+            Assert.Throws<InvalidDataException>(() => PartitionTableReader.FromStream(stream, mutable: false));
+        }
+
+        [Fact]
         public void WriteToFile_RoundTrips_Mbr()
         {
             var mbr = CreateEmptyMbrImage();
@@ -119,6 +211,47 @@ namespace FirmwareKit.PartitionTable.Tests
                     File.Delete(tempPath);
                 }
             }
+        }
+
+        [Fact]
+        public void WriteToStream_TruncatesExistingMbrTarget()
+        {
+            var mbr = CreateEmptyMbrImage();
+
+            using var source = new MemoryStream(mbr);
+            var table = Assert.IsType<MbrPartitionTable>(PartitionTableReader.FromStream(source, mutable: true));
+            table.SetPartition(0, new MbrPartitionEntry { PartitionType = 0x07, FirstLba = 2048, SectorCount = 1024 });
+
+            using var target = new MemoryStream(new byte[1024]);
+            table.WriteToStream(target);
+
+            Assert.Equal(512, target.Length);
+            target.Position = 0;
+
+            var reopened = Assert.IsType<MbrPartitionTable>(PartitionTableReader.FromStream(target, mutable: false));
+            Assert.Equal(0x07, reopened.Partitions[0].PartitionType);
+            Assert.Equal((uint)2048, reopened.Partitions[0].FirstLba);
+        }
+
+        [Fact]
+        public void WriteToStream_TruncatesExistingGptTarget()
+        {
+            var image = File.ReadAllBytes(TestGptPath);
+
+            using var source = new MemoryStream(image);
+            var table = Assert.IsType<GptPartitionTable>(PartitionTableReader.FromStream(source, mutable: true));
+
+            using var target = new MemoryStream(new byte[512 * 140]);
+            table.WriteToStream(target);
+
+            long expectedLength = (long)(table.BackupLba + 1) * table.SectorSize;
+            Assert.Equal(expectedLength, target.Length);
+            target.Position = 0;
+
+            var reopened = Assert.IsType<GptPartitionTable>(PartitionTableReader.FromStream(target, mutable: false));
+            Assert.Equal(table.DiskGuid, reopened.DiskGuid);
+            Assert.Equal(table.Partitions.Count, reopened.Partitions.Count);
+            Assert.Equal(table.SectorSize, reopened.SectorSize);
         }
 
         [Fact]

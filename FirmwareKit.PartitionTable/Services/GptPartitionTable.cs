@@ -220,7 +220,7 @@ namespace FirmwareKit.PartitionTable
                 byte[] backupHeader = PartitionTableParser.BuildGptHeader(_header, BackupLba, CurrentLba, backupEntriesLba, entryBufferCrc32, _sectorSize);
 
                 long requiredLength = (long)(BackupLba + 1) * _sectorSize;
-                if (stream.Length < requiredLength)
+                if (stream.Length != requiredLength)
                 {
                     stream.SetLength(requiredLength);
                 }
@@ -249,7 +249,7 @@ namespace FirmwareKit.PartitionTable
             }
             finally
             {
-                stream.Position = originalPosition;
+                stream.Position = Math.Min(originalPosition, stream.Length);
             }
         }
 

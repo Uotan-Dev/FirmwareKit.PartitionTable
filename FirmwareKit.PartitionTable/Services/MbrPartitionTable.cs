@@ -138,13 +138,18 @@ namespace FirmwareKit.PartitionTable
             try
             {
                 byte[] buffer = PartitionTableParser.BuildMbrImage(_partitions, _bootstrapCode);
+                if (stream.Length != buffer.Length)
+                {
+                    stream.SetLength(buffer.Length);
+                }
+
                 stream.Position = 0;
                 stream.Write(buffer, 0, buffer.Length);
                 stream.Flush();
             }
             finally
             {
-                stream.Position = originalPosition;
+                stream.Position = Math.Min(originalPosition, stream.Length);
             }
         }
 

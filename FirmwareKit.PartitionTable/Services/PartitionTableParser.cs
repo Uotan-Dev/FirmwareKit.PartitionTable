@@ -17,7 +17,7 @@ namespace FirmwareKit.PartitionTable
         private const string GptSignature = "EFI PART";
         private const uint GptRevision = 0x00010000;
         private const uint GptHeaderSize = 92;
-        private static readonly int[] DefaultSectorSizes = { 512, 1024, 2048, 4096 };
+        private static readonly int[] DefaultSectorSizes = { 512, 1024, 2048, 4096, 8192 };
 
         /// <summary>
         /// Reads a partition table from a seekable stream.
@@ -28,7 +28,7 @@ namespace FirmwareKit.PartitionTable
         /// <returns>The parsed partition table. / 解析后的分区表。</returns>
         public static IPartitionTable FromStream(Stream stream, bool mutable = false)
         {
-            return FromStream(stream, mutable, null);
+            return FromStream(stream, mutable, (PartitionReadOptions?)null);
         }
 
         /// <summary>
@@ -41,13 +41,26 @@ namespace FirmwareKit.PartitionTable
         /// <returns>The parsed partition table. / 解析后的分区表。</returns>
         public static IPartitionTable FromStream(Stream stream, bool mutable, int? sectorSize)
         {
+            return FromStream(stream, mutable, new PartitionReadOptions { PreferredSectorSize = sectorSize });
+        }
+
+        /// <summary>
+        /// Reads a partition table from a seekable stream using advanced probing options.
+        /// 使用高级探测选项从可寻址流中读取分区表。
+        /// </summary>
+        /// <param name="stream">The source stream. / 源流。</param>
+        /// <param name="mutable">Whether the returned table should be editable. / 返回的表是否可编辑。</param>
+        /// <param name="options">Read options. / 读取选项。</param>
+        /// <returns>The parsed partition table. / 解析后的分区表。</returns>
+        public static IPartitionTable FromStream(Stream stream, bool mutable, PartitionReadOptions? options)
+        {
             if (stream == null) throw new ArgumentNullException(nameof(stream));
             if (!stream.CanSeek) throw new NotSupportedException("The stream must support seeking.");
 
             long originalPosition = stream.Position;
             try
             {
-                var gpt = TryReadGpt(stream, mutable, sectorSize);
+                var gpt = TryReadGpt(stream, mutable, options);
                 if (gpt != null)
                 {
                     return gpt;
@@ -55,6 +68,14 @@ namespace FirmwareKit.PartitionTable
 
                 if (TryReadMbr(stream, out var mbr))
                 {
+                    if (options != null
+                        && options.StrictSectorSize
+                        && options.PreferredSectorSize.HasValue
+                        && ContainsProtectivePartition(mbr.Partitions))
+                    {
+                        throw new InvalidDataException($"GPT table was not found with strict sector size {options.PreferredSectorSize.Value}.");
+                    }
+
                     return new MbrPartitionTable(mbr, mutable);
                 }
 
@@ -75,7 +96,7 @@ namespace FirmwareKit.PartitionTable
         /// <returns>The parsed partition table. / 解析后的分区表。</returns>
         public static IPartitionTable FromFile(string path, bool mutable = false)
         {
-            return FromFile(path, mutable, null);
+            return FromFile(path, mutable, (PartitionReadOptions?)null);
         }
 
         /// <summary>
@@ -88,10 +109,23 @@ namespace FirmwareKit.PartitionTable
         /// <returns>The parsed partition table. / 解析后的分区表。</returns>
         public static IPartitionTable FromFile(string path, bool mutable, int? sectorSize)
         {
+            return FromFile(path, mutable, new PartitionReadOptions { PreferredSectorSize = sectorSize });
+        }
+
+        /// <summary>
+        /// Reads a partition table from a file using advanced probing options.
+        /// 使用高级探测选项从文件中读取分区表。
+        /// </summary>
+        /// <param name="path">The file path. / 文件路径。</param>
+        /// <param name="mutable">Whether the returned table should be editable. / 返回的表是否可编辑。</param>
+        /// <param name="options">Read options. / 读取选项。</param>
+        /// <returns>The parsed partition table. / 解析后的分区表。</returns>
+        public static IPartitionTable FromFile(string path, bool mutable, PartitionReadOptions? options)
+        {
             if (path == null) throw new ArgumentNullException(nameof(path));
 
             using var stream = File.OpenRead(path);
-            return FromStream(stream, mutable, sectorSize);
+            return FromStream(stream, mutable, options);
         }
 
         private static bool TryReadMbr(Stream stream, out MbrDescriptor descriptor)
@@ -124,21 +158,69 @@ namespace FirmwareKit.PartitionTable
                 Partitions = partitions,
                 Signature = ReadUInt16LittleEndian(data, 510),
                 IsValid = ReadUInt16LittleEndian(data, 510) == MbrSignature
+                    && HasValidMbrPartitionStatus(partitions)
             };
 
             return descriptor.IsValid;
         }
 
-        private static GptPartitionTable? TryReadGpt(Stream stream, bool mutable, int? preferredSectorSize)
+        private static bool HasValidMbrPartitionStatus(MbrPartitionEntry[] partitions)
         {
+            for (int i = 0; i < partitions.Length; i++)
+            {
+                byte status = partitions[i].Status;
+                if (status != 0x00 && status != 0x80)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static GptPartitionTable? TryReadGpt(Stream stream, bool mutable, PartitionReadOptions? options)
+        {
+            options ??= new PartitionReadOptions();
+            int? preferredSectorSize = options.PreferredSectorSize;
             if (preferredSectorSize.HasValue)
             {
                 if (preferredSectorSize.Value <= 0) throw new ArgumentOutOfRangeException(nameof(preferredSectorSize));
-                return TryReadGptWithSectorSize(stream, mutable, preferredSectorSize.Value);
+
+                var preferred = TryReadGptWithSectorSize(stream, mutable, preferredSectorSize.Value);
+                if (preferred != null || options.StrictSectorSize)
+                {
+                    return preferred;
+                }
+            }
+
+            IReadOnlyList<int> customProbe = options.GetProbeSectorSizes();
+            for (int i = 0; i < customProbe.Count; i++)
+            {
+                int candidate = customProbe[i];
+                if (candidate <= 0)
+                {
+                    continue;
+                }
+
+                if (preferredSectorSize.HasValue && candidate == preferredSectorSize.Value)
+                {
+                    continue;
+                }
+
+                var table = TryReadGptWithSectorSize(stream, mutable, candidate);
+                if (table != null)
+                {
+                    return table;
+                }
             }
 
             for (int i = 0; i < DefaultSectorSizes.Length; i++)
             {
+                if (preferredSectorSize.HasValue && DefaultSectorSizes[i] == preferredSectorSize.Value)
+                {
+                    continue;
+                }
+
                 var table = TryReadGptWithSectorSize(stream, mutable, DefaultSectorSizes[i]);
                 if (table != null)
                 {
@@ -151,56 +233,67 @@ namespace FirmwareKit.PartitionTable
 
         private static GptPartitionTable? TryReadGptWithSectorSize(Stream stream, bool mutable, int sectorSize)
         {
-            if (!TryReadBytes(stream, sectorSize, sectorSize, out var headerBytes))
+            try
+            {
+                if (!TryReadBytes(stream, sectorSize, sectorSize, out var headerBytes))
+                {
+                    return null;
+                }
+
+                if (!string.Equals(Encoding.ASCII.GetString(headerBytes, 0, 8), GptSignature, StringComparison.Ordinal))
+                {
+                    return null;
+                }
+
+                var header = new GptHeader
+                {
+                    Signature = GptSignature,
+                    Revision = ReadUInt32LittleEndian(headerBytes, 8),
+                    HeaderSize = ReadUInt32LittleEndian(headerBytes, 12),
+                    HeaderCrc32 = ReadUInt32LittleEndian(headerBytes, 16),
+                    Reserved = ReadUInt32LittleEndian(headerBytes, 20),
+                    CurrentLba = ReadUInt64LittleEndian(headerBytes, 24),
+                    BackupLba = ReadUInt64LittleEndian(headerBytes, 32),
+                    FirstUsableLba = ReadUInt64LittleEndian(headerBytes, 40),
+                    LastUsableLba = ReadUInt64LittleEndian(headerBytes, 48),
+                    DiskGuid = new Guid(CopyBytes(headerBytes, 56, 16)),
+                    PartitionEntriesLba = ReadUInt64LittleEndian(headerBytes, 72),
+                    PartitionsCount = ReadUInt32LittleEndian(headerBytes, 80),
+                    PartitionEntrySize = ReadUInt32LittleEndian(headerBytes, 84),
+                    PartitionEntryArrayCrc32 = ReadUInt32LittleEndian(headerBytes, 88)
+                };
+
+                if (header.HeaderSize < GptHeaderSize || header.HeaderSize > (uint)sectorSize)
+                {
+                    return null;
+                }
+
+                if (header.PartitionsCount == 0 || header.PartitionEntrySize < 56)
+                {
+                    return null;
+                }
+
+                uint headerSize = header.HeaderSize;
+                var headerBuffer = new byte[headerSize];
+                Buffer.BlockCopy(headerBytes, 0, headerBuffer, 0, (int)headerSize);
+                Array.Clear(headerBuffer, 16, 4);
+                bool headerCrcValid = Crc32.Compute(headerBuffer) == header.HeaderCrc32;
+
+                if (!TryReadGptEntries(stream, header, sectorSize, out var entries, out var entryTableCrcValid))
+                {
+                    return null;
+                }
+
+                return new GptPartitionTable(header, entries, mutable, sectorSize, headerCrcValid, entryTableCrcValid);
+            }
+            catch (OverflowException)
             {
                 return null;
             }
-
-            if (!string.Equals(Encoding.ASCII.GetString(headerBytes, 0, 8), GptSignature, StringComparison.Ordinal))
+            catch (ArgumentOutOfRangeException)
             {
                 return null;
             }
-
-            var header = new GptHeader
-            {
-                Signature = GptSignature,
-                Revision = ReadUInt32LittleEndian(headerBytes, 8),
-                HeaderSize = ReadUInt32LittleEndian(headerBytes, 12),
-                HeaderCrc32 = ReadUInt32LittleEndian(headerBytes, 16),
-                Reserved = ReadUInt32LittleEndian(headerBytes, 20),
-                CurrentLba = ReadUInt64LittleEndian(headerBytes, 24),
-                BackupLba = ReadUInt64LittleEndian(headerBytes, 32),
-                FirstUsableLba = ReadUInt64LittleEndian(headerBytes, 40),
-                LastUsableLba = ReadUInt64LittleEndian(headerBytes, 48),
-                DiskGuid = new Guid(CopyBytes(headerBytes, 56, 16)),
-                PartitionEntriesLba = ReadUInt64LittleEndian(headerBytes, 72),
-                PartitionsCount = ReadUInt32LittleEndian(headerBytes, 80),
-                PartitionEntrySize = ReadUInt32LittleEndian(headerBytes, 84),
-                PartitionEntryArrayCrc32 = ReadUInt32LittleEndian(headerBytes, 88)
-            };
-
-            if (header.HeaderSize < GptHeaderSize || header.HeaderSize > (uint)sectorSize)
-            {
-                return null;
-            }
-
-            if (header.PartitionsCount == 0 || header.PartitionEntrySize < 56)
-            {
-                return null;
-            }
-
-            uint headerSize = header.HeaderSize;
-            var headerBuffer = new byte[headerSize];
-            Buffer.BlockCopy(headerBytes, 0, headerBuffer, 0, (int)headerSize);
-            Array.Clear(headerBuffer, 16, 4);
-            bool headerCrcValid = Crc32.Compute(headerBuffer) == header.HeaderCrc32;
-
-            if (!TryReadGptEntries(stream, header, sectorSize, out var entries, out var entryTableCrcValid))
-            {
-                return null;
-            }
-
-            return new GptPartitionTable(header, entries, mutable, sectorSize, headerCrcValid, entryTableCrcValid);
         }
 
         private static bool TryReadGptEntries(Stream stream, GptHeader header, int sectorSize, out List<GptPartitionEntry> entries, out bool entryTableCrcValid)
@@ -371,7 +464,7 @@ namespace FirmwareKit.PartitionTable
             for (int i = 0; i < MbrPartitionCount; i++)
             {
                 int offset = 446 + (i * 16);
-                var partition = partitions[i];
+                var partition = partitions[i] ?? new MbrPartitionEntry();
                 buffer[offset] = partition.Status;
                 CopyPartitionChs(partition.FirstCHS, buffer, offset + 1);
                 buffer[offset + 4] = partition.PartitionType;
