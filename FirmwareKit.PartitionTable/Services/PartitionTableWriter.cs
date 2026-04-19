@@ -18,7 +18,7 @@ namespace FirmwareKit.PartitionTable.Services
         /// <param name="path">The destination file path. / 目标文件路径。</param>
         /// <param name="requireConfirmation">Whether a confirmation token is required. / 是否要求确认令牌。</param>
         /// <param name="confirmation">Confirmation token value. / 确认令牌内容。</param>
-        public static void WriteToFileAtomic(IPartitionTable table, string path, bool requireConfirmation = true, string? confirmation = null)
+        public static void WriteToFileAtomic(IPartitionTable table, string path, bool requireConfirmation = true, string? confirmation = null, bool keepBackup = false)
         {
             if (table == null) throw new ArgumentNullException(nameof(table));
             if (path == null) throw new ArgumentNullException(nameof(path));
@@ -52,7 +52,10 @@ namespace FirmwareKit.PartitionTable.Services
                     }
 
                     File.Replace(tempPath, path, backupPath);
-                    File.Delete(backupPath);
+                    if (!keepBackup)
+                    {
+                        File.Delete(backupPath);
+                    }
                 }
                 else
                 {

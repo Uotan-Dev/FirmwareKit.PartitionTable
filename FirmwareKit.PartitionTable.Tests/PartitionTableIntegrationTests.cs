@@ -1,6 +1,7 @@
 using FirmwareKit.PartitionTable.Models;
 using FirmwareKit.PartitionTable.Services;
 using FirmwareKit.PartitionTable.Util;
+using FirmwareKit.PartitionTable.Cli;
 using System;
 using System.IO;
 using System.Text;
@@ -211,6 +212,193 @@ namespace FirmwareKit.PartitionTable.Tests
             Assert.Equal("Gpt", manifest.Kind);
             Assert.NotNull(manifest.DiskGuid);
             Assert.NotEmpty(manifest.GptPartitions);
+        }
+
+        [Fact]
+        public void Manifest_ToPartitionTable_RoundTripsGptData()
+        {
+            byte[] image = CreateSampleGptImage(512);
+            using var stream = new MemoryStream(image);
+            var original = Assert.IsType<GptPartitionTable>(PartitionTableReader.FromStream(stream, mutable: false, sectorSize: 512));
+
+            string json = PartitionTableManifestSerializer.ExportToJson(original, indented: false);
+            PartitionTableManifest manifest = PartitionTableManifestSerializer.ImportFromJson(json);
+            var rebuilt = Assert.IsType<GptPartitionTable>(PartitionTableManifestSerializer.ToPartitionTable(manifest, mutable: true));
+
+            Assert.Equal(original.DiskGuid, rebuilt.DiskGuid);
+            Assert.Equal(original.Partitions.Count, rebuilt.Partitions.Count);
+            Assert.Equal(original.Partitions[0].Name, rebuilt.Partitions[0].Name);
+
+            PartitionTableDiff diff = PartitionTableOperations.Compare(original, rebuilt);
+            Assert.False(diff.HasDifferences);
+        }
+
+        [Fact]
+        public void Operations_Compare_ReportsModifiedPartition()
+        {
+            byte[] image = CreateSampleGptImage(512);
+            using var stream = new MemoryStream(image);
+            var original = Assert.IsType<GptPartitionTable>(PartitionTableReader.FromStream(stream, mutable: true, sectorSize: 512));
+
+            original.UpdatePartition(0, new GptPartitionEntry
+            {
+                PartitionType = original.Partitions[0].PartitionType,
+                PartitionId = original.Partitions[0].PartitionId,
+                FirstLba = original.Partitions[0].FirstLba,
+                LastLba = original.Partitions[0].LastLba,
+                Attributes = original.Partitions[0].Attributes,
+                Name = "DATA2"
+            });
+
+            PartitionTableDiff diff = PartitionTableOperations.Compare(PartitionTableReader.FromStream(new MemoryStream(image), mutable: false, sectorSize: 512), original);
+            Assert.True(diff.HasDifferences);
+            Assert.Contains(diff.Entries, entry => entry.Kind == PartitionDiffKind.Modified && entry.Index == 0);
+        }
+
+        [Fact]
+        public void Repair_AnyInPlace_RestoresMissingMbrSignature()
+        {
+            byte[] image = CreateMbrImageWithoutSignature();
+
+            using var stream = new MemoryStream(image);
+            PartitionRepairResult result = PartitionTableRepair.RepairAnyInPlace(stream);
+
+            Assert.True(result.Repaired);
+            stream.Position = 0;
+
+            var repaired = Assert.IsType<MbrPartitionTable>(PartitionTableReader.FromStream(stream, mutable: false));
+            Assert.Equal(0xAA55, repaired.Signature);
+            Assert.Equal((byte)0x07, repaired.Partitions[0].PartitionType);
+        }
+
+        [Fact]
+        public void Cli_Write_DryRun_DoesNotCreateOutputFile()
+        {
+            string sourcePath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".gpt");
+            string destPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".out");
+
+            try
+            {
+                File.WriteAllBytes(sourcePath, CreateSampleGptImage(512));
+
+                int exitCode = Program.Main(new[] { "write", sourcePath, destPath, "--dry-run" });
+
+                Assert.Equal(0, exitCode);
+                Assert.False(File.Exists(destPath));
+            }
+            finally
+            {
+                if (File.Exists(sourcePath))
+                {
+                    File.Delete(sourcePath);
+                }
+
+                if (File.Exists(destPath))
+                {
+                    File.Delete(destPath);
+                }
+            }
+        }
+
+        [Fact]
+        public void Cli_Diff_ReturnsNonZeroForDifferentImages()
+        {
+            string leftPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".gpt");
+            string rightPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".gpt");
+
+            try
+            {
+                File.WriteAllBytes(leftPath, CreateSampleGptImage(512));
+                File.WriteAllBytes(rightPath, CreateSampleGptImage(512));
+
+                byte[] rightImage = File.ReadAllBytes(rightPath);
+                using (var stream = new MemoryStream(rightImage))
+                {
+                    var table = Assert.IsType<GptPartitionTable>(PartitionTableReader.FromStream(stream, mutable: true, sectorSize: 512));
+                    table.UpdatePartition(0, new GptPartitionEntry
+                    {
+                        PartitionType = table.Partitions[0].PartitionType,
+                        PartitionId = table.Partitions[0].PartitionId,
+                        FirstLba = table.Partitions[0].FirstLba,
+                        LastLba = table.Partitions[0].LastLba,
+                        Attributes = table.Partitions[0].Attributes,
+                        Name = "DATA2"
+                    });
+
+                    using var output = new MemoryStream();
+                    table.WriteToStream(output);
+                    File.WriteAllBytes(rightPath, output.ToArray());
+                }
+
+                int exitCode = Program.Main(new[] { "diff", leftPath, rightPath, "--sector-size", "512" });
+
+                Assert.Equal(10, exitCode);
+            }
+            finally
+            {
+                if (File.Exists(leftPath))
+                {
+                    File.Delete(leftPath);
+                }
+
+                if (File.Exists(rightPath))
+                {
+                    File.Delete(rightPath);
+                }
+            }
+        }
+
+        [Fact]
+        public void Cli_ExportAndImport_RoundTripManifest()
+        {
+            string imagePath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".gpt");
+            string manifestPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".json");
+            string rebuiltPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".img");
+
+            try
+            {
+                File.WriteAllBytes(imagePath, CreateSampleGptImage(512));
+
+                Assert.Equal(0, Program.Main(new[] { "export", imagePath, manifestPath, "--sector-size", "512" }));
+                Assert.True(File.Exists(manifestPath));
+
+                Assert.Equal(0, Program.Main(new[] { "import", manifestPath, rebuiltPath }));
+                Assert.True(File.Exists(rebuiltPath));
+
+                using var original = File.OpenRead(imagePath);
+                using var rebuilt = File.OpenRead(rebuiltPath);
+                var left = Assert.IsType<GptPartitionTable>(PartitionTableReader.FromStream(original, mutable: false, sectorSize: 512));
+                var right = Assert.IsType<GptPartitionTable>(PartitionTableReader.FromStream(rebuilt, mutable: false, sectorSize: 512));
+
+                PartitionTableDiff diff = PartitionTableOperations.Compare(left, right);
+                Assert.False(diff.HasDifferences);
+            }
+            finally
+            {
+                if (File.Exists(imagePath))
+                {
+                    File.Delete(imagePath);
+                }
+
+                if (File.Exists(manifestPath))
+                {
+                    File.Delete(manifestPath);
+                }
+
+                if (File.Exists(rebuiltPath))
+                {
+                    File.Delete(rebuiltPath);
+                }
+            }
+        }
+
+        private static byte[] CreateMbrImageWithoutSignature()
+        {
+            var buffer = new byte[512];
+            buffer[446 + 4] = 0x07;
+            BitConverter.GetBytes((uint)2048).CopyTo(buffer, 446 + 8);
+            BitConverter.GetBytes((uint)1024).CopyTo(buffer, 446 + 12);
+            return buffer;
         }
 
         [Fact]

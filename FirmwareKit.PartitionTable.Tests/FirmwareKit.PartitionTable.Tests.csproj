@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\FirmwareKit.PartitionTable\FirmwareKit.PartitionTable.csproj" />
+    <ProjectReference Include="..\FirmwareKit.PartitionTable.Cli\FirmwareKit.PartitionTable.Cli.csproj" />
   </ItemGroup>
 
   <ItemGroup>

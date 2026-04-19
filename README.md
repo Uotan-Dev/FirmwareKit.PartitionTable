@@ -11,9 +11,10 @@ A .NET partition table library for reading, parsing, editing, serializing, deser
 - Provides diagnostics for CRC/checksum, bounds, overlap, and hybrid MBR warnings.
 - Supports conservative GPT CRC refresh/repair workflows.
 - Supports high-level operation helpers (alignment and dry-run write planning).
+- Supports table diffing and structured comparison reports.
 - Supports advanced read options (strict sector-size and custom probe sizes).
 - Supports async read APIs for service and UI scenarios.
-- Supports JSON manifest import/export for tool-chain interoperability.
+- Supports JSON manifest import/export and manifest-to-table reconstruction.
 - Supports atomic file writes with confirmation token.
 - Uses `Crc32.NET` for CRC-32 calculation.
 - Targets `netstandard2.0`, `net6.0`, `net8.0`, and `net10.0`.
@@ -57,11 +58,20 @@ if (!report.IsHealthy)
 }
 ```
 
+Validate, repair, and diff tables:
+
+```csharp
+PartitionDiagnosticsReport diagnostics = PartitionTableDiagnostics.Analyze(table);
+PartitionRepairResult repaired = PartitionTableRepair.RepairAnyInPlace(File.Open("disk.img", FileMode.Open, FileAccess.ReadWrite, FileShare.None));
+PartitionTableDiff diff = PartitionTableOperations.Compare(leftTable, rightTable);
+```
+
 Manifest interoperability:
 
 ```csharp
 string json = PartitionTableManifestSerializer.ExportToJson(table);
 PartitionTableManifest manifest = PartitionTableManifestSerializer.ImportFromJson(json);
+IPartitionTable rebuilt = PartitionTableManifestSerializer.ToPartitionTable(manifest);
 ```
 
 Handle Amlogic EPT tables:
@@ -94,7 +104,12 @@ CLI usage:
 ```bash
 dotnet run --project FirmwareKit.PartitionTable.Cli -- read disk.img --sector-size 8192
 dotnet run --project FirmwareKit.PartitionTable.Cli -- read disk.img --json
-dotnet run --project FirmwareKit.PartitionTable.Cli -- write in.img out.img --mutable --sector-size 4096
+dotnet run --project FirmwareKit.PartitionTable.Cli -- write in.img out.img --sector-size 4096 --dry-run
+dotnet run --project FirmwareKit.PartitionTable.Cli -- validate disk.img --sector-size 4096
+dotnet run --project FirmwareKit.PartitionTable.Cli -- repair disk.img --sector-size 4096
+dotnet run --project FirmwareKit.PartitionTable.Cli -- diff left.img right.img --json
+dotnet run --project FirmwareKit.PartitionTable.Cli -- export disk.img manifest.json --sector-size 4096
+dotnet run --project FirmwareKit.PartitionTable.Cli -- import manifest.json disk.img --keep-backup
 ```
 
 ## Testing
