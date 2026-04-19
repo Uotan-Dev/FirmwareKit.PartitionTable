@@ -1,4 +1,4 @@
-namespace FirmwareKit.PartitionTable
+namespace FirmwareKit.PartitionTable.Models
 {
     /// <summary>
     /// One write range in a dry-run write plan.

@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace FirmwareKit.PartitionTable
+namespace FirmwareKit.PartitionTable.Models
 {
     /// <summary>
     /// Result of a repair operation.

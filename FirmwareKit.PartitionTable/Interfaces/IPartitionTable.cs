@@ -1,6 +1,7 @@
+using FirmwareKit.PartitionTable.Models;
 using System.IO;
 
-namespace FirmwareKit.PartitionTable
+namespace FirmwareKit.PartitionTable.Interfaces
 {
     /// <summary>
     /// Common partition table operations.

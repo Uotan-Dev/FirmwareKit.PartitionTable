@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace FirmwareKit.PartitionTable
+namespace FirmwareKit.PartitionTable.Models
 {
     /// <summary>
     /// Controls probing behavior when parsing partition tables.

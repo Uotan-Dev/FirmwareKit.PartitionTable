@@ -1,7 +1,9 @@
+using FirmwareKit.PartitionTable.Interfaces;
+using FirmwareKit.PartitionTable.Models;
 using System;
 using System.Collections.Generic;
 
-namespace FirmwareKit.PartitionTable
+namespace FirmwareKit.PartitionTable.Services
 {
     /// <summary>
     /// High-level partition operations and dry-run planning helpers.

@@ -1,4 +1,4 @@
-namespace FirmwareKit.PartitionTable
+namespace FirmwareKit.PartitionTable.Interfaces
 {
     /// <summary>
     /// Adds mutability control to a partition table.

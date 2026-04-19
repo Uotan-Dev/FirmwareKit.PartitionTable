@@ -1,4 +1,4 @@
-namespace FirmwareKit.PartitionTable
+namespace FirmwareKit.PartitionTable.Models
 {
     /// <summary>
     /// The severity level of a partition table diagnostic issue.

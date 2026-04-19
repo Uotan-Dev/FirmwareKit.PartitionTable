@@ -1,4 +1,4 @@
-namespace FirmwareKit.PartitionTable
+namespace FirmwareKit.PartitionTable.Models
 {
     /// <summary>
     /// The supported partition table kinds.

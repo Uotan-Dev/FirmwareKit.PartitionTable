@@ -1,8 +1,10 @@
+using FirmwareKit.PartitionTable.Models;
+using FirmwareKit.PartitionTable.Services;
+using FirmwareKit.PartitionTable.Util;
 using System;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
-using FirmwareKit.PartitionTable;
 using Xunit;
 
 namespace FirmwareKit.PartitionTable.Tests

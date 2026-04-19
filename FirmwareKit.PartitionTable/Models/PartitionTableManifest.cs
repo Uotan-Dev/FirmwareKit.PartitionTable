@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace FirmwareKit.PartitionTable
+namespace FirmwareKit.PartitionTable.Models
 {
     /// <summary>
     /// Portable manifest for partition table import/export.

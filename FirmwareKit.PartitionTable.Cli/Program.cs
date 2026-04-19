@@ -1,7 +1,9 @@
+using FirmwareKit.PartitionTable.Interfaces;
+using FirmwareKit.PartitionTable.Models;
+using FirmwareKit.PartitionTable.Services;
 using System;
 using System.IO;
 using System.Text.Json;
-using FirmwareKit.PartitionTable;
 
 namespace FirmwareKit.PartitionTable.Cli
 {

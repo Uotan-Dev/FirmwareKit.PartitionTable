@@ -1,8 +1,11 @@
+using FirmwareKit.PartitionTable.Interfaces;
+using FirmwareKit.PartitionTable.Models;
+using FirmwareKit.PartitionTable.Util;
 using System;
 using System.Collections.Generic;
 using System.IO;
 
-namespace FirmwareKit.PartitionTable
+namespace FirmwareKit.PartitionTable.Services
 {
     /// <summary>
     /// Represents a parsed GPT partition table.

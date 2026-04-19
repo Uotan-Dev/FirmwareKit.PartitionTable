@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 
-namespace FirmwareKit.PartitionTable
+namespace FirmwareKit.PartitionTable.Util
 {
     /// <summary>
     /// Normalizes platform-specific disk or image paths.

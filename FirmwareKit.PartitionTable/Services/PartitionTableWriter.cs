@@ -1,7 +1,8 @@
+using FirmwareKit.PartitionTable.Interfaces;
 using System;
 using System.IO;
 
-namespace FirmwareKit.PartitionTable
+namespace FirmwareKit.PartitionTable.Services
 {
     /// <summary>
     /// Provides safety-focused write helpers.

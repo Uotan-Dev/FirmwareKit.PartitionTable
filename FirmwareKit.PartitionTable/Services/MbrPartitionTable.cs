@@ -1,7 +1,9 @@
+using FirmwareKit.PartitionTable.Interfaces;
+using FirmwareKit.PartitionTable.Models;
 using System;
 using System.IO;
 
-namespace FirmwareKit.PartitionTable
+namespace FirmwareKit.PartitionTable.Services
 {
     /// <summary>
     /// Represents a parsed MBR partition table.

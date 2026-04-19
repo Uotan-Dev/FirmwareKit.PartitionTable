@@ -1,6 +1,6 @@
 using System;
 
-namespace FirmwareKit.PartitionTable
+namespace FirmwareKit.PartitionTable.Models
 {
     /// <summary>
     /// Represents one GPT partition entry.

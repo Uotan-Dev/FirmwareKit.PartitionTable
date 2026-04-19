@@ -1,6 +1,6 @@
 using System;
 
-namespace FirmwareKit.PartitionTable
+namespace FirmwareKit.PartitionTable.Util
 {
     /// <summary>
     /// CRC-32 helper backed by the <c>Crc32.NET</c> package.

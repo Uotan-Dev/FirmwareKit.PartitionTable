@@ -1,8 +1,10 @@
+using FirmwareKit.PartitionTable.Interfaces;
+using FirmwareKit.PartitionTable.Models;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace FirmwareKit.PartitionTable
+namespace FirmwareKit.PartitionTable.Services
 {
     /// <summary>
     /// Convenience entry points for partition table parsing.

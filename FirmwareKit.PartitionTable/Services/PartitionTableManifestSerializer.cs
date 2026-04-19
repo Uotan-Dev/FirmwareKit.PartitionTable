@@ -1,8 +1,10 @@
+using FirmwareKit.PartitionTable.Interfaces;
+using FirmwareKit.PartitionTable.Models;
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
 
-namespace FirmwareKit.PartitionTable
+namespace FirmwareKit.PartitionTable.Services
 {
     /// <summary>
     /// Serializes partition tables to/from a portable JSON manifest.

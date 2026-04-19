@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace FirmwareKit.PartitionTable
+namespace FirmwareKit.PartitionTable.Models
 {
     /// <summary>
     /// Dry-run write plan for a partition table.

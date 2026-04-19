@@ -1,9 +1,12 @@
+using FirmwareKit.PartitionTable.Interfaces;
+using FirmwareKit.PartitionTable.Models;
+using FirmwareKit.PartitionTable.Util;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-namespace FirmwareKit.PartitionTable
+namespace FirmwareKit.PartitionTable.Services
 {
     /// <summary>
     /// Reads and writes MBR and GPT partition tables.

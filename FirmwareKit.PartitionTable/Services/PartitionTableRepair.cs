@@ -1,7 +1,8 @@
+using FirmwareKit.PartitionTable.Models;
 using System;
 using System.IO;
 
-namespace FirmwareKit.PartitionTable
+namespace FirmwareKit.PartitionTable.Services
 {
     /// <summary>
     /// Provides conservative repair utilities for partition tables.
