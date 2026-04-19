@@ -1,7 +1,7 @@
+using FirmwareKit.PartitionTable.Cli;
 using FirmwareKit.PartitionTable.Models;
 using FirmwareKit.PartitionTable.Services;
 using FirmwareKit.PartitionTable.Util;
-using FirmwareKit.PartitionTable.Cli;
 using System;
 using System.IO;
 using System.Text;

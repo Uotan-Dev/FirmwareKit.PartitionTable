@@ -1,4 +1,5 @@
 <Solution>
+  <Project Path="FirmwareKit.PartitionTable.Json/FirmwareKit.PartitionTable.Json.csproj" />
   <Project Path="FirmwareKit.PartitionTable.Cli/FirmwareKit.PartitionTable.Cli.csproj" />
   <Project Path="FirmwareKit.PartitionTable.Tests/FirmwareKit.PartitionTable.Tests.csproj" />
   <Project Path="FirmwareKit.PartitionTable/FirmwareKit.PartitionTable.csproj" />

@@ -1,5 +1,4 @@
 using FirmwareKit.PartitionTable.Interfaces;
-using FirmwareKit.PartitionTable.Models;
 using FirmwareKit.PartitionTable.Services;
 using System;
 using System.Collections.Generic;

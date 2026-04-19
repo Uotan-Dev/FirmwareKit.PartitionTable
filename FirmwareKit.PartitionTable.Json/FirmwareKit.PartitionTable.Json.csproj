@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>netstandard2.0;net8.0;net10.0</TargetFrameworks>
+    <Nullable>enable</Nullable>
+    <LangVersion>10.0</LangVersion>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <DocumentationFile>bin\$(Configuration)\$(TargetFramework)\FirmwareKit.PartitionTable.Json.xml</DocumentationFile>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackageId>FirmwareKit.PartitionTable.Json</PackageId>
+    <Version>1.0.0</Version>
+    <Description>JSON manifest import/export extensions for FirmwareKit.PartitionTable.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>  
+</PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FirmwareKit.PartitionTable\FirmwareKit.PartitionTable.csproj" />
+    <PackageReference Include="System.Text.Json" Version="10.0.6" />
+  </ItemGroup>
+
+</Project>

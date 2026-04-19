@@ -14,7 +14,7 @@ A .NET partition table library for reading, parsing, editing, serializing, deser
 - Supports table diffing and structured comparison reports.
 - Supports advanced read options (strict sector-size and custom probe sizes).
 - Supports async read APIs for service and UI scenarios.
-- Supports JSON manifest import/export and manifest-to-table reconstruction.
+- Supports JSON manifest import/export and manifest-to-table reconstruction via the optional `FirmwareKit.PartitionTable.Json` package.
 - Supports atomic file writes with confirmation token.
 - Uses `Crc32.NET` for CRC-32 calculation.
 - Targets `netstandard2.0`, `net6.0`, `net8.0`, and `net10.0`.
@@ -22,6 +22,7 @@ A .NET partition table library for reading, parsing, editing, serializing, deser
 ## Projects
 
 - `FirmwareKit.PartitionTable` - core library.
+- `FirmwareKit.PartitionTable.Json` - optional JSON manifest extension package.
 - `FirmwareKit.PartitionTable.Cli` - sample command-line tool.
 - `FirmwareKit.PartitionTable.Tests` - xUnit test project.
 
@@ -69,6 +70,7 @@ PartitionTableDiff diff = PartitionTableOperations.Compare(leftTable, rightTable
 Manifest interoperability:
 
 ```csharp
+// Requires the FirmwareKit.PartitionTable.Json package.
 string json = PartitionTableManifestSerializer.ExportToJson(table);
 PartitionTableManifest manifest = PartitionTableManifestSerializer.ImportFromJson(json);
 IPartitionTable rebuilt = PartitionTableManifestSerializer.ToPartitionTable(manifest);

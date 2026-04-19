@@ -6,7 +6,7 @@ namespace FirmwareKit.PartitionTable.Models
 
         internal static bool IsValidPartitionName(string? name)
         {
-            if (string.IsNullOrEmpty(name) || name.Length > 15)
+            if (name == null || string.IsNullOrEmpty(name) || name.Length > 15)
             {
                 return false;
             }
