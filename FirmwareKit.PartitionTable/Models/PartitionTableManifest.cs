@@ -50,5 +50,11 @@ namespace FirmwareKit.PartitionTable.Models
         /// 获取或设置清单中的 MBR 分区项。
         /// </summary>
         public List<MbrPartitionEntry> MbrPartitions { get; set; } = new List<MbrPartitionEntry>();
+
+        /// <summary>
+        /// Gets or sets Amlogic EPT partition entries in the manifest.
+        /// 获取或设置清单中的 Amlogic EPT 分区项。
+        /// </summary>
+        public List<AmlogicPartitionEntry> AmlogicPartitions { get; set; } = new List<AmlogicPartitionEntry>();
     }
 }

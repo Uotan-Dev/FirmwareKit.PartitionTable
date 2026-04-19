@@ -107,6 +107,78 @@ namespace FirmwareKit.PartitionTable.Tests
         }
 
         [Fact]
+        public void Diagnostics_DetectsAmlogicChecksumMismatch()
+        {
+            byte[] image = CreateSampleAmlogicEptImage();
+            image[20] ^= 0xFF;
+
+            using var stream = new MemoryStream(image);
+            var ept = Assert.IsType<AmlogicPartitionTable>(PartitionTableReader.FromStream(stream, mutable: false));
+
+            PartitionDiagnosticsReport report = PartitionTableDiagnostics.Analyze(ept);
+            Assert.False(report.IsHealthy);
+            Assert.Contains(report.Issues, i => i.Code == "AMLOGIC_EPT_CHECKSUM");
+        }
+
+        [Fact]
+        public void Diagnostics_DetectsAmlogicInvalidPartitionName()
+        {
+            byte[] image = CreateSampleAmlogicEptImage();
+
+            using var stream = new MemoryStream(image);
+            var ept = Assert.IsType<AmlogicPartitionTable>(PartitionTableReader.FromStream(stream, mutable: true));
+            ept.Partitions[0].Name = "bad!";
+
+            PartitionDiagnosticsReport report = PartitionTableDiagnostics.Analyze(ept);
+            Assert.False(report.IsHealthy);
+            Assert.Contains(report.Issues, i => i.Code == "AMLOGIC_EPT_NAME_INVALID");
+        }
+
+        [Fact]
+        public void Operations_BuildWritePlan_ForAmlogicContainsExpectedRange()
+        {
+            byte[] image = CreateSampleAmlogicEptImage();
+            using var stream = new MemoryStream(image);
+            var table = Assert.IsType<AmlogicPartitionTable>(PartitionTableReader.FromStream(stream, mutable: false));
+
+            PartitionWritePlan writePlan = PartitionTableOperations.BuildWritePlan(table);
+            Assert.Equal(PartitionTableType.AmlogicEpt, writePlan.Type);
+            Assert.Single(writePlan.Ranges);
+            Assert.Equal(0, writePlan.Ranges[0].Offset);
+            Assert.Equal(1304, writePlan.Ranges[0].Length);
+        }
+
+        [Fact]
+        public void Manifest_ExportImport_AmlogicRoundTripsKind()
+        {
+            byte[] image = CreateSampleAmlogicEptImage();
+            using var stream = new MemoryStream(image);
+            var table = PartitionTableReader.FromStream(stream, mutable: false);
+
+            string json = PartitionTableManifestSerializer.ExportToJson(table, indented: false);
+            PartitionTableManifest manifest = PartitionTableManifestSerializer.ImportFromJson(json);
+
+            Assert.Equal("AmlogicEpt", manifest.Kind);
+            Assert.NotEmpty(manifest.AmlogicPartitions);
+        }
+
+        [Fact]
+        public void Manifest_ExportImport_AmlogicPreservesPartitionNames()
+        {
+            byte[] image = CreateSampleAmlogicEptImage();
+            using var stream = new MemoryStream(image);
+            var table = Assert.IsType<AmlogicPartitionTable>(PartitionTableReader.FromStream(stream, mutable: false));
+
+            string json = PartitionTableManifestSerializer.ExportToJson(table, indented: false);
+            PartitionTableManifest manifest = PartitionTableManifestSerializer.ImportFromJson(json);
+
+            Assert.Collection(manifest.AmlogicPartitions,
+                entry => Assert.Equal("bootloader", entry.Name),
+                entry => Assert.Equal("reserved", entry.Name),
+                entry => Assert.Equal("env", entry.Name));
+        }
+
+        [Fact]
         public async Task Reader_AsyncAndStrictOptions_WorkAsExpected()
         {
             byte[] image = CreateSampleGptImage(4096);
@@ -302,6 +374,60 @@ namespace FirmwareKit.PartitionTable.Tests
         {
             WriteUInt32(buffer, offset, (uint)value);
             WriteUInt32(buffer, offset + 4, (uint)(value >> 32));
+        }
+
+        private static byte[] CreateSampleAmlogicEptImage()
+        {
+            byte[] image = new byte[1304];
+
+            WriteUInt32(image, 0, 0x0054504D);
+            WriteUInt32(image, 4, 0x302E3130);
+            WriteUInt32(image, 8, 0x30302E30);
+            WriteUInt32(image, 12, 0x00000000);
+            WriteUInt32(image, 16, 3);
+
+            WriteEptEntry(image, 0, "bootloader", 0x0000000000400000UL, 0x0000000000000000UL, 1);
+            WriteEptEntry(image, 1, "reserved", 0x0000000004000000UL, 0x0000000002400000UL, 0);
+            WriteEptEntry(image, 2, "env", 0x0000000000800000UL, 0x0000000006400000UL, 0);
+
+            uint checksum = ComputeAmlogicStyleChecksum(image, 3);
+            WriteUInt32(image, 20, checksum);
+            return image;
+        }
+
+        private static void WriteEptEntry(byte[] buffer, int index, string name, ulong size, ulong offset, uint mask)
+        {
+            int entryOffset = 24 + (index * 40);
+            byte[] nameBytes = Encoding.ASCII.GetBytes(name);
+            Array.Copy(nameBytes, 0, buffer, entryOffset, Math.Min(nameBytes.Length, 15));
+            WriteUInt64(buffer, entryOffset + 16, size);
+            WriteUInt64(buffer, entryOffset + 24, offset);
+            WriteUInt32(buffer, entryOffset + 32, mask);
+            WriteUInt32(buffer, entryOffset + 36, 0);
+        }
+
+        private static uint ComputeAmlogicStyleChecksum(byte[] tableBytes, int partitionsCount)
+        {
+            uint checksum = 0;
+            for (int i = 0; i < partitionsCount; i++)
+            {
+                int cursor = 24;
+                for (int j = 0; j < 10; j++)
+                {
+                    checksum += ReadUInt32(tableBytes, cursor);
+                    cursor += 4;
+                }
+            }
+
+            return checksum;
+        }
+
+        private static uint ReadUInt32(byte[] buffer, int offset)
+        {
+            return (uint)(buffer[offset]
+                | (buffer[offset + 1] << 8)
+                | (buffer[offset + 2] << 16)
+                | (buffer[offset + 3] << 24));
         }
     }
 }

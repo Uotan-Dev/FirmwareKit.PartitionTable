@@ -16,6 +16,12 @@ namespace FirmwareKit.PartitionTable.Models
         /// GUID Partition Table.
         /// GUID 分区表。
         /// </summary>
-        Gpt
+        Gpt,
+
+        /// <summary>
+        /// Amlogic proprietary EPT partition table.
+        /// Amlogic 私有 EPT 分区表。
+        /// </summary>
+        AmlogicEpt
     }
 }

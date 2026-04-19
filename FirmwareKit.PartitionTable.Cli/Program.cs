@@ -100,6 +100,15 @@ namespace FirmwareKit.PartitionTable.Cli
                     Console.WriteLine($"GPT partition[{i}] Type: {entry.PartitionType} Id: {entry.PartitionId} {entry.FirstLba}-{entry.LastLba} Name: {entry.Name}");
                 }
             }
+            else if (table.Type == PartitionTableType.AmlogicEpt && table is AmlogicPartitionTable amlogic)
+            {
+                Console.WriteLine($"Checksum valid: {amlogic.IsChecksumValid}");
+                for (int i = 0; i < amlogic.Partitions.Count; i++)
+                {
+                    var entry = amlogic.Partitions[i];
+                    Console.WriteLine($"EPT partition[{i}] Name: {entry.Name} Offset: 0x{entry.Offset:X} Size: 0x{entry.Size:X} Mask: {entry.MaskFlags}");
+                }
+            }
             else
             {
                 Console.WriteLine("Unknown partition table type");
@@ -225,6 +234,18 @@ namespace FirmwareKit.PartitionTable.Cli
                     isHeaderCrcValid = gpt.IsHeaderCrcValid,
                     isEntryTableCrcValid = gpt.IsEntryTableCrcValid,
                     partitions = gpt.Partitions
+                };
+            }
+            else if (table is AmlogicPartitionTable amlogic)
+            {
+                payload = new
+                {
+                    type = table.Type.ToString(),
+                    isMutable = table.IsMutable,
+                    isChecksumValid = amlogic.IsChecksumValid,
+                    versionWords = amlogic.VersionWords,
+                    recordedChecksum = amlogic.RecordedChecksum,
+                    partitions = amlogic.Partitions
                 };
             }
             else

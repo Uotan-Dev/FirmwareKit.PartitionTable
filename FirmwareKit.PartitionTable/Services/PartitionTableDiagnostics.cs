@@ -30,6 +30,10 @@ namespace FirmwareKit.PartitionTable.Services
             {
                 AnalyzeMbr(mbr, report);
             }
+            else if (table is global::FirmwareKit.PartitionTable.Models.AmlogicPartitionTable amlogic)
+            {
+                AnalyzeAmlogicEpt(amlogic, report);
+            }
 
             return report;
         }
@@ -157,6 +161,113 @@ namespace FirmwareKit.PartitionTable.Services
                     Severity = PartitionIssueSeverity.Warning,
                     CanAutoRepair = false
                 });
+            }
+        }
+
+        private static void AnalyzeAmlogicEpt(global::FirmwareKit.PartitionTable.Models.AmlogicPartitionTable table, PartitionDiagnosticsReport report)
+        {
+            if (table.Partitions.Count == 0)
+            {
+                report.Issues.Add(new PartitionDiagnosticIssue
+                {
+                    Code = "AMLOGIC_EPT_EMPTY",
+                    Message = "Amlogic EPT must contain at least one partition.",
+                    Severity = PartitionIssueSeverity.Error,
+                    CanAutoRepair = false
+                });
+            }
+
+            if (!table.IsChecksumValid)
+            {
+                report.Issues.Add(new PartitionDiagnosticIssue
+                {
+                    Code = "AMLOGIC_EPT_CHECKSUM",
+                    Message = "Amlogic EPT checksum mismatch.",
+                    Severity = PartitionIssueSeverity.Error,
+                    CanAutoRepair = true
+                });
+            }
+
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var intervals = new List<(ulong Start, ulong End)>();
+            for (int i = 0; i < table.Partitions.Count; i++)
+            {
+                AmlogicPartitionEntry partition = table.Partitions[i];
+                if (string.IsNullOrWhiteSpace(partition.Name))
+                {
+                    report.Issues.Add(new PartitionDiagnosticIssue
+                    {
+                        Code = "AMLOGIC_EPT_NAME_EMPTY",
+                        Message = "An Amlogic EPT partition has an empty name.",
+                        Severity = PartitionIssueSeverity.Error,
+                        CanAutoRepair = false
+                    });
+                    continue;
+                }
+
+                if (!AmlogicPartitionTableSupport.IsValidPartitionName(partition.Name))
+                {
+                    report.Issues.Add(new PartitionDiagnosticIssue
+                    {
+                        Code = "AMLOGIC_EPT_NAME_INVALID",
+                        Message = "An Amlogic EPT partition name contains invalid characters or is longer than 15 ASCII bytes.",
+                        Severity = PartitionIssueSeverity.Error,
+                        CanAutoRepair = false
+                    });
+                }
+
+                if (!names.Add(partition.Name))
+                {
+                    report.Issues.Add(new PartitionDiagnosticIssue
+                    {
+                        Code = "AMLOGIC_EPT_NAME_DUP",
+                        Message = "Amlogic EPT partitions contain duplicated names.",
+                        Severity = PartitionIssueSeverity.Error,
+                        CanAutoRepair = false
+                    });
+                }
+
+                if (partition.Size == 0)
+                {
+                    continue;
+                }
+
+                ulong end;
+                try
+                {
+                    end = checked(partition.Offset + partition.Size - 1);
+                }
+                catch (OverflowException)
+                {
+                    report.Issues.Add(new PartitionDiagnosticIssue
+                    {
+                        Code = "AMLOGIC_EPT_RANGE_OVERFLOW",
+                        Message = "An Amlogic EPT partition has an overflowing byte range.",
+                        Severity = PartitionIssueSeverity.Error,
+                        CanAutoRepair = false
+                    });
+                    continue;
+                }
+
+                intervals.Add((partition.Offset, end));
+            }
+
+            intervals.Sort((a, b) => a.Start.CompareTo(b.Start));
+            for (int i = 1; i < intervals.Count; i++)
+            {
+                var previous = intervals[i - 1];
+                var current = intervals[i];
+                if (IntervalsOverlap(previous.Start, previous.End, current.Start, current.End))
+                {
+                    report.Issues.Add(new PartitionDiagnosticIssue
+                    {
+                        Code = "AMLOGIC_EPT_OVERLAP",
+                        Message = "Amlogic EPT partitions contain overlapping byte ranges.",
+                        Severity = PartitionIssueSeverity.Error,
+                        CanAutoRepair = false
+                    });
+                    return;
+                }
             }
         }
 

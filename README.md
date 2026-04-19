@@ -1,14 +1,14 @@
 # FirmwareKit.PartitionTable
 
-A .NET partition table library for reading, parsing, editing, serializing, deserializing, and saving MBR and GPT partition tables.
+A .NET partition table library for reading, parsing, editing, serializing, deserializing, and saving MBR, GPT, and Amlogic EPT partition tables.
 
 ## Features
 
-- Detects MBR and GPT partition tables from a seekable stream or file.
+- Detects Amlogic EPT, MBR, and GPT partition tables from a seekable stream or file.
 - Auto-detects common GPT sector sizes (512/1024/2048/4096/8192).
 - Supports editable and read-only table instances.
 - Preserves stream position after parsing.
-- Provides diagnostics for CRC, bounds, overlap, and hybrid MBR warnings.
+- Provides diagnostics for CRC/checksum, bounds, overlap, and hybrid MBR warnings.
 - Supports conservative GPT CRC refresh/repair workflows.
 - Supports high-level operation helpers (alignment and dry-run write planning).
 - Supports advanced read options (strict sector-size and custom probe sizes).
@@ -62,6 +62,21 @@ Manifest interoperability:
 ```csharp
 string json = PartitionTableManifestSerializer.ExportToJson(table);
 PartitionTableManifest manifest = PartitionTableManifestSerializer.ImportFromJson(json);
+```
+
+Handle Amlogic EPT tables:
+
+```csharp
+using var reserved = File.OpenRead("reserved-partition.img");
+IPartitionTable table = PartitionTableReader.FromStream(reserved, mutable: false);
+if (table is AmlogicPartitionTable ept)
+{
+ Console.WriteLine($"EPT checksum valid: {ept.IsChecksumValid}");
+ foreach (var part in ept.Partitions)
+ {
+  Console.WriteLine($"{part.Name}: offset=0x{part.Offset:X}, size=0x{part.Size:X}, mask={part.MaskFlags}");
+ }
+}
 ```
 
 Safety write:

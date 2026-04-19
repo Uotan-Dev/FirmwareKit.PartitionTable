@@ -40,6 +40,10 @@ namespace FirmwareKit.PartitionTable.Services
             {
                 manifest.MbrPartitions = new List<MbrPartitionEntry>(mbr.Partitions);
             }
+            else if (table is AmlogicPartitionTable amlogic)
+            {
+                manifest.AmlogicPartitions = new List<AmlogicPartitionEntry>(amlogic.Partitions);
+            }
 
             var options = new JsonSerializerOptions { WriteIndented = indented };
             return JsonSerializer.Serialize(manifest, options);

@@ -143,6 +143,17 @@ namespace FirmwareKit.PartitionTable.Services
                 plan.Ranges.Add(new PartitionWriteRange { Offset = CheckedByteOffset(gpt.PartitionEntriesLba, gpt.SectorSize), Length = entryTableLength, Description = "GPT primary entry array" });
                 plan.Ranges.Add(new PartitionWriteRange { Offset = CheckedByteOffset(backupEntriesLba, gpt.SectorSize), Length = entryTableLength, Description = "GPT backup entry array" });
                 plan.Ranges.Add(new PartitionWriteRange { Offset = CheckedByteOffset(gpt.BackupLba, gpt.SectorSize), Length = gpt.SectorSize, Description = "GPT backup header" });
+                return plan;
+            }
+
+            if (table is AmlogicPartitionTable)
+            {
+                plan.Ranges.Add(new PartitionWriteRange
+                {
+                    Offset = 0,
+                    Length = 24 + (32 * 40),
+                    Description = "Amlogic EPT table"
+                });
             }
 
             return plan;

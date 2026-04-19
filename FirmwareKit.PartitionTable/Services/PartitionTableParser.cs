@@ -9,14 +9,22 @@ using System.Text;
 namespace FirmwareKit.PartitionTable.Services
 {
     /// <summary>
-    /// Reads and writes MBR and GPT partition tables.
-    /// 读取和写入 MBR 与 GPT 分区表。
+    /// Reads and writes MBR, GPT and Amlogic EPT partition tables.
+    /// 读取和写入 MBR、GPT 与 Amlogic EPT 分区表。
     /// </summary>
     public static class PartitionTableParser
     {
         private const int MbrSize = 512;
         private const int MbrPartitionCount = 4;
         private const ushort MbrSignature = 0xAA55;
+        private const uint AmlogicHeaderMagic = 0x0054504D;
+        private const uint AmlogicVersionWord0 = 0x302E3130;
+        private const uint AmlogicVersionWord1 = 0x30302E30;
+        private const uint AmlogicVersionWord2 = 0x00000000;
+        private const int AmlogicHeaderSize = 24;
+        private const int AmlogicPartitionEntrySize = 40;
+        internal const int AmlogicPartitionSlotCount = 32;
+        private const int AmlogicTableSize = AmlogicHeaderSize + (AmlogicPartitionSlotCount * AmlogicPartitionEntrySize);
         private const string GptSignature = "EFI PART";
         private const uint GptRevision = 0x00010000;
         private const uint GptHeaderSize = 92;
@@ -63,6 +71,12 @@ namespace FirmwareKit.PartitionTable.Services
             long originalPosition = stream.Position;
             try
             {
+                var amlogic = TryReadAmlogicEpt(stream, mutable);
+                if (amlogic != null)
+                {
+                    return amlogic;
+                }
+
                 var gpt = TryReadGpt(stream, mutable, options);
                 if (gpt != null)
                 {
@@ -82,11 +96,79 @@ namespace FirmwareKit.PartitionTable.Services
                     return new MbrPartitionTable(mbr, mutable);
                 }
 
-                throw new InvalidDataException("No valid MBR or GPT partition table could be identified from the stream.");
+                throw new InvalidDataException("No valid Amlogic EPT, MBR, or GPT partition table could be identified from the stream.");
             }
             finally
             {
                 stream.Position = originalPosition;
+            }
+        }
+
+        private static global::FirmwareKit.PartitionTable.Models.AmlogicPartitionTable? TryReadAmlogicEpt(Stream stream, bool mutable)
+        {
+            try
+            {
+                if (!TryReadBytes(stream, 0, AmlogicTableSize, out var tableBytes))
+                {
+                    return null;
+                }
+
+                uint magic = ReadUInt32LittleEndian(tableBytes, 0);
+                if (magic != AmlogicHeaderMagic)
+                {
+                    return null;
+                }
+
+                uint version0 = ReadUInt32LittleEndian(tableBytes, 4);
+                uint version1 = ReadUInt32LittleEndian(tableBytes, 8);
+                uint version2 = ReadUInt32LittleEndian(tableBytes, 12);
+                if (version0 != AmlogicVersionWord0 || version1 != AmlogicVersionWord1 || version2 != AmlogicVersionWord2)
+                {
+                    return null;
+                }
+
+                uint partitionsCount = ReadUInt32LittleEndian(tableBytes, 16);
+                if (partitionsCount == 0 || partitionsCount > AmlogicPartitionTableSupport.PartitionSlotCount)
+                {
+                    return null;
+                }
+
+                uint recordedChecksum = ReadUInt32LittleEndian(tableBytes, 20);
+                uint computedChecksum = ComputeAmlogicChecksum(tableBytes, (int)partitionsCount);
+
+                var partitions = new List<AmlogicPartitionEntry>((int)partitionsCount);
+                for (int i = 0; i < partitionsCount; i++)
+                {
+                    int offset = AmlogicHeaderSize + (i * AmlogicPartitionEntrySize);
+                    string name = ReadAsciiString(tableBytes, offset, 16);
+                    if (!AmlogicPartitionTableSupport.IsValidPartitionName(name))
+                    {
+                        return null;
+                    }
+
+                    partitions.Add(new AmlogicPartitionEntry
+                    {
+                        Name = name,
+                        Size = ReadUInt64LittleEndian(tableBytes, offset + 16),
+                        Offset = ReadUInt64LittleEndian(tableBytes, offset + 24),
+                        MaskFlags = ReadUInt32LittleEndian(tableBytes, offset + 32)
+                    });
+                }
+
+                return new global::FirmwareKit.PartitionTable.Models.AmlogicPartitionTable(
+                    new[] { version0, version1, version2 },
+                    recordedChecksum,
+                    partitions,
+                    mutable,
+                    checksumValid: recordedChecksum == computedChecksum);
+            }
+            catch (OverflowException)
+            {
+                return null;
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                return null;
             }
         }
 
@@ -436,6 +518,23 @@ namespace FirmwareKit.PartitionTable.Services
             return Encoding.Unicode.GetString(source, offset, length).TrimEnd('\0');
         }
 
+        internal static string ReadAsciiString(byte[] source, int offset, int length)
+        {
+            if (length <= 0)
+            {
+                return string.Empty;
+            }
+
+            int end = offset;
+            int max = offset + length;
+            while (end < max && source[end] != 0)
+            {
+                end++;
+            }
+
+            return Encoding.ASCII.GetString(source, offset, end - offset).Trim();
+        }
+
         internal static void WriteUInt16LittleEndian(byte[] buffer, int offset, ushort value)
         {
             buffer[offset] = (byte)value;
@@ -579,6 +678,84 @@ namespace FirmwareKit.PartitionTable.Services
             return BuildMbrImage(partitions, Array.Empty<byte>());
         }
 
+        internal static byte[] BuildAmlogicEptImage(IReadOnlyList<uint>? versionWords, IReadOnlyList<AmlogicPartitionEntry> partitions)
+        {
+            var buffer = new byte[AmlogicTableSize];
+            WriteUInt32LittleEndian(buffer, 0, AmlogicHeaderMagic);
+
+            uint version0 = versionWords != null && versionWords.Count > 0 ? versionWords[0] : AmlogicVersionWord0;
+            uint version1 = versionWords != null && versionWords.Count > 1 ? versionWords[1] : AmlogicVersionWord1;
+            uint version2 = versionWords != null && versionWords.Count > 2 ? versionWords[2] : AmlogicVersionWord2;
+            WriteUInt32LittleEndian(buffer, 4, version0);
+            WriteUInt32LittleEndian(buffer, 8, version1);
+            WriteUInt32LittleEndian(buffer, 12, version2);
+
+            int count = Math.Min(partitions?.Count ?? 0, AmlogicPartitionSlotCount);
+            WriteUInt32LittleEndian(buffer, 16, (uint)count);
+
+            for (int i = 0; i < count; i++)
+            {
+                int offset = AmlogicHeaderSize + (i * AmlogicPartitionEntrySize);
+                AmlogicPartitionEntry entry = partitions![i] ?? new AmlogicPartitionEntry();
+                WriteAsciiName(buffer, offset, 16, entry.Name);
+                WriteUInt64LittleEndian(buffer, offset + 16, entry.Size);
+                WriteUInt64LittleEndian(buffer, offset + 24, entry.Offset);
+                WriteUInt32LittleEndian(buffer, offset + 32, entry.MaskFlags);
+                WriteUInt32LittleEndian(buffer, offset + 36, 0);
+            }
+
+            uint checksum = ComputeAmlogicChecksum(buffer, count);
+            WriteUInt32LittleEndian(buffer, 20, checksum);
+            return buffer;
+        }
+
+        internal static uint ComputeAmlogicChecksum(byte[] tableBytes, int partitionsCount)
+        {
+            if (tableBytes == null)
+            {
+                throw new ArgumentNullException(nameof(tableBytes));
+            }
+
+            int count = partitionsCount;
+            if (count < 0)
+            {
+                count = 0;
+            }
+
+            if (count > AmlogicPartitionTableSupport.PartitionSlotCount)
+            {
+                count = AmlogicPartitionTableSupport.PartitionSlotCount;
+            }
+
+            uint checksum = 0;
+            int firstPartitionOffset = AmlogicHeaderSize;
+            int wordsPerPartition = AmlogicPartitionEntrySize / 4;
+            for (int i = 0; i < count; i++)
+            {
+                int cursor = firstPartitionOffset;
+                for (int j = 0; j < wordsPerPartition; j++)
+                {
+                    checksum += ReadUInt32LittleEndian(tableBytes, cursor);
+                    cursor += 4;
+                }
+            }
+
+            return checksum;
+        }
+
+        internal static void WriteAsciiName(byte[] buffer, int offset, int maxLength, string name)
+        {
+            Array.Clear(buffer, offset, maxLength);
+            if (string.IsNullOrEmpty(name))
+            {
+                return;
+            }
+
+            string normalized = name.Length > maxLength - 1 ? name.Substring(0, maxLength - 1) : name;
+            byte[] bytes = Encoding.ASCII.GetBytes(normalized);
+            Buffer.BlockCopy(bytes, 0, buffer, offset, Math.Min(bytes.Length, maxLength - 1));
+        }
+
         internal static bool ContainsProtectivePartition(MbrPartitionEntry[] partitions)
         {
             for (int i = 0; i < partitions.Length; i++)
@@ -625,6 +802,22 @@ namespace FirmwareKit.PartitionTable.Services
                 LastLba = entry.LastLba,
                 Attributes = entry.Attributes,
                 Name = entry.Name ?? string.Empty
+            };
+        }
+
+        internal static AmlogicPartitionEntry ClonePartitionEntry(AmlogicPartitionEntry entry)
+        {
+            if (entry == null)
+            {
+                return new AmlogicPartitionEntry();
+            }
+
+            return new AmlogicPartitionEntry
+            {
+                Name = entry.Name ?? string.Empty,
+                Size = entry.Size,
+                Offset = entry.Offset,
+                MaskFlags = entry.MaskFlags
             };
         }
 
