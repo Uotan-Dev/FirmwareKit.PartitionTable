@@ -1,3 +1,4 @@
+using FirmwareKit.PartitionTable.Exceptions;
 using FirmwareKit.PartitionTable.Interfaces;
 using FirmwareKit.PartitionTable.Models;
 using FirmwareKit.PartitionTable.Util;
@@ -17,7 +18,7 @@ namespace FirmwareKit.PartitionTable.Services
         private readonly int _sectorSize;
         private bool _isMutable;
 
-        internal GptPartitionTable(PartitionTableParser.GptHeader header, List<GptPartitionEntry> partitions, bool mutable, int sectorSize, bool headerCrcValid, bool entryTableCrcValid)
+        internal GptPartitionTable(PartitionTableParser.GptHeader header, List<GptPartitionEntry> partitions, bool mutable, int sectorSize, bool headerCrcValid, bool entryTableCrcValid, bool recoveredFromBackup = false)
         {
             Type = PartitionTableType.Gpt;
             _header = header;
@@ -36,6 +37,7 @@ namespace FirmwareKit.PartitionTable.Services
             HeaderCrc32 = header.HeaderCrc32;
             IsHeaderCrcValid = headerCrcValid;
             IsEntryTableCrcValid = entryTableCrcValid;
+            IsRecoveredFromBackup = recoveredFromBackup;
         }
 
         /// <summary>
@@ -123,6 +125,12 @@ namespace FirmwareKit.PartitionTable.Services
         public bool IsEntryTableCrcValid { get; private set; }
 
         /// <summary>
+        /// Gets a value indicating whether this table was recovered from the backup header.
+        /// 获取当前表是否从备份头恢复。
+        /// </summary>
+        public bool IsRecoveredFromBackup { get; }
+
+        /// <summary>
         /// Gets the sector size that was used to parse the table.
         /// 获取解析时使用的扇区大小。
         /// </summary>
@@ -142,7 +150,7 @@ namespace FirmwareKit.PartitionTable.Services
         {
             if (!IsMutable)
             {
-                throw new InvalidOperationException("GPT partition table is read-only and cannot be modified.");
+                throw new PartitionOperationException("GPT partition table is read-only and cannot be modified.", "TABLE_READ_ONLY", tableType: PartitionTableType.Gpt);
             }
         }
 
@@ -165,7 +173,7 @@ namespace FirmwareKit.PartitionTable.Services
         {
             EnsureMutable();
             if (partition == null) throw new ArgumentNullException(nameof(partition));
-            if (Partitions.Count >= PartitionsCount) throw new InvalidOperationException($"GPT partition entry count has reached the maximum value of {PartitionsCount}.");
+            if (Partitions.Count >= PartitionsCount) throw new PartitionOperationException($"GPT partition entry count has reached the maximum value of {PartitionsCount}.", "PARTITION_COUNT_EXCEEDED", tableType: PartitionTableType.Gpt);
 
             Partitions.Add(PartitionTableParser.ClonePartitionEntry(partition));
         }
@@ -279,12 +287,12 @@ namespace FirmwareKit.PartitionTable.Services
         {
             if (PartitionEntrySize == 0 || PartitionsCount == 0)
             {
-                throw new InvalidOperationException("GPT header is invalid and cannot be written.");
+                throw new PartitionOperationException("GPT header is invalid and cannot be written.", "GPT_HEADER_INVALID", tableType: PartitionTableType.Gpt);
             }
 
             if (BackupLba <= GetEntryTableSectorCount())
             {
-                throw new InvalidOperationException("GPT backup header position is invalid and cannot be written.");
+                throw new PartitionOperationException("GPT backup header position is invalid and cannot be written.", "GPT_BACKUP_LBA_INVALID", tableType: PartitionTableType.Gpt);
             }
         }
     }

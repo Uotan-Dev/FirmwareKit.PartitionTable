@@ -10,6 +10,18 @@ namespace FirmwareKit.PartitionTable.Models
     public sealed class PartitionTableManifest
     {
         /// <summary>
+        /// The current manifest schema version.
+        /// 当前清单架构版本。
+        /// </summary>
+        public const int CurrentSchemaVersion = 2;
+
+        /// <summary>
+        /// Gets or sets the manifest schema version for forward compatibility.
+        /// 获取或设置清单架构版本，用于前向兼容。
+        /// </summary>
+        public int SchemaVersion { get; set; } = CurrentSchemaVersion;
+
+        /// <summary>
         /// Gets or sets the partition table kind string.
         /// 获取或设置分区表类型字符串。
         /// </summary>

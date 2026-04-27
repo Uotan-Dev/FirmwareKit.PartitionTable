@@ -1,3 +1,4 @@
+using FirmwareKit.PartitionTable.Exceptions;
 using FirmwareKit.PartitionTable.Interfaces;
 using FirmwareKit.PartitionTable.Models;
 using System;
@@ -106,7 +107,7 @@ namespace FirmwareKit.PartitionTable.Services
                 }
             }
 
-            throw new InvalidOperationException("No aligned free GPT range can satisfy the requested sector count.");
+            throw new PartitionOperationException("No aligned free GPT range can satisfy the requested sector count.", "NO_FREE_ALIGNED_RANGE", tableType: PartitionTableType.Gpt);
         }
 
         /// <summary>

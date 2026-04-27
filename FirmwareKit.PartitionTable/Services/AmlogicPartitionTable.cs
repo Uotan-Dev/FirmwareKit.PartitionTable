@@ -1,10 +1,11 @@
+using FirmwareKit.PartitionTable.Exceptions;
 using FirmwareKit.PartitionTable.Interfaces;
-using FirmwareKit.PartitionTable.Services;
+using FirmwareKit.PartitionTable.Models;
 using System;
 using System.Collections.Generic;
 using System.IO;
 
-namespace FirmwareKit.PartitionTable.Models
+namespace FirmwareKit.PartitionTable.Services
 {
     /// <summary>
     /// Represents a parsed Amlogic proprietary EPT partition table.
@@ -23,6 +24,16 @@ namespace FirmwareKit.PartitionTable.Models
             _recordedChecksum = recordedChecksum;
             _isMutable = mutable;
             IsChecksumValid = checksumValid;
+            Partitions = partitions ?? new List<AmlogicPartitionEntry>();
+        }
+
+        internal AmlogicPartitionTable(List<AmlogicPartitionEntry> partitions, bool mutable)
+        {
+            Type = PartitionTableType.AmlogicEpt;
+            _versionWords = new uint[] { 0x0054504Du, 0x302E3130u, 0x30302E30u };
+            _recordedChecksum = 0;
+            _isMutable = mutable;
+            IsChecksumValid = true;
             Partitions = partitions ?? new List<AmlogicPartitionEntry>();
         }
 
@@ -70,7 +81,7 @@ namespace FirmwareKit.PartitionTable.Models
         {
             if (!IsMutable)
             {
-                throw new InvalidOperationException("Amlogic EPT partition table is read-only and cannot be modified.");
+                throw new PartitionOperationException("Amlogic EPT partition table is read-only and cannot be modified.", "TABLE_READ_ONLY", tableType: PartitionTableType.AmlogicEpt);
             }
         }
 
@@ -95,7 +106,7 @@ namespace FirmwareKit.PartitionTable.Models
             if (partition == null) throw new ArgumentNullException(nameof(partition));
             if (Partitions.Count >= AmlogicPartitionTableSupport.PartitionSlotCount)
             {
-                throw new InvalidOperationException($"Amlogic EPT partition count has reached the maximum value of {AmlogicPartitionTableSupport.PartitionSlotCount}.");
+                throw new PartitionOperationException($"Amlogic EPT partition count has reached the maximum value of {AmlogicPartitionTableSupport.PartitionSlotCount}.", "PARTITION_COUNT_EXCEEDED", tableType: PartitionTableType.AmlogicEpt);
             }
 
             Partitions.Add(PartitionTableParser.ClonePartitionEntry(partition));
@@ -144,18 +155,18 @@ namespace FirmwareKit.PartitionTable.Models
             if (!stream.CanSeek || !stream.CanWrite) throw new NotSupportedException("The stream must be writable and seekable.");
             if (Partitions.Count == 0)
             {
-                throw new InvalidOperationException("Amlogic EPT partition table must contain at least one partition.");
+                throw new PartitionOperationException("Amlogic EPT partition table must contain at least one partition.", "AMLOGIC_EPT_EMPTY", tableType: PartitionTableType.AmlogicEpt);
             }
             if (Partitions.Count > AmlogicPartitionTableSupport.PartitionSlotCount)
             {
-                throw new InvalidOperationException($"Amlogic EPT partition count has reached the maximum value of {AmlogicPartitionTableSupport.PartitionSlotCount}.");
+                throw new PartitionOperationException($"Amlogic EPT partition count has reached the maximum value of {AmlogicPartitionTableSupport.PartitionSlotCount}.", "PARTITION_COUNT_EXCEEDED", tableType: PartitionTableType.AmlogicEpt);
             }
 
             for (int i = 0; i < Partitions.Count; i++)
             {
                 if (!AmlogicPartitionTableSupport.IsValidPartitionName(Partitions[i].Name))
                 {
-                    throw new InvalidOperationException("Amlogic EPT partition names must be 1-15 ASCII characters from [A-Za-z0-9_-].");
+                    throw new PartitionOperationException("Amlogic EPT partition names must be 1-15 ASCII characters from [A-Za-z0-9_-].", "AMLOGIC_EPT_NAME_INVALID", i, PartitionTableType.AmlogicEpt);
                 }
             }
 

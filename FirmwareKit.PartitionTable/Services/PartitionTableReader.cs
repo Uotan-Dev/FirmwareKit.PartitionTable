@@ -89,28 +89,36 @@ namespace FirmwareKit.PartitionTable.Services
         }
 
         /// <summary>
-        /// Parses a partition table asynchronously.
-        /// 异步解析分区表。
+        /// Parses a partition table asynchronously from a file stream.
+        /// 从文件异步解析分区表，使用真正的异步文件 I/O。
+        /// </summary>
+        public static async Task<IPartitionTable> FromFileAsync(string path, bool mutable = false, PartitionReadOptions? options = null, CancellationToken cancellationToken = default)
+        {
+            if (path == null) throw new System.ArgumentNullException(nameof(path));
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true);
+            return await Task.Run(() =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return PartitionTableParser.FromStream(stream, mutable, options);
+            }, cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Parses a partition table asynchronously from a seekable stream.
+        /// 从可寻址流异步解析分区表。
         /// </summary>
         public static Task<IPartitionTable> FromStreamAsync(Stream stream, bool mutable = false, PartitionReadOptions? options = null, CancellationToken cancellationToken = default)
         {
+            if (stream == null) throw new System.ArgumentNullException(nameof(stream));
+
+            cancellationToken.ThrowIfCancellationRequested();
             return Task.Run(() =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 return PartitionTableParser.FromStream(stream, mutable, options);
-            }, cancellationToken);
-        }
-
-        /// <summary>
-        /// Parses a partition table from a file asynchronously.
-        /// 从文件异步解析分区表。
-        /// </summary>
-        public static Task<IPartitionTable> FromFileAsync(string path, bool mutable = false, PartitionReadOptions? options = null, CancellationToken cancellationToken = default)
-        {
-            return Task.Run(() =>
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                return PartitionTableParser.FromFile(path, mutable, options);
             }, cancellationToken);
         }
     }

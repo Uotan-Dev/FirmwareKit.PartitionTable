@@ -1,4 +1,5 @@
 using FirmwareKit.PartitionTable.Interfaces;
+using FirmwareKit.PartitionTable.Json.Services;
 using FirmwareKit.PartitionTable.Models;
 using FirmwareKit.PartitionTable.Services;
 using System;

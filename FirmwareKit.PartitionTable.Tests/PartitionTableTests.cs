@@ -1,3 +1,5 @@
+using FirmwareKit.PartitionTable.Exceptions;
+using FirmwareKit.PartitionTable.Interfaces;
 using FirmwareKit.PartitionTable.Models;
 using FirmwareKit.PartitionTable.Services;
 using FirmwareKit.PartitionTable.Util;
@@ -39,7 +41,7 @@ namespace FirmwareKit.PartitionTable.Tests
 
             using var ms = new MemoryStream(image);
 
-            Assert.Throws<InvalidDataException>(() => PartitionTableReader.FromStream(ms));
+            Assert.Throws<PartitionTableFormatException>(() => PartitionTableReader.FromStream(ms));
         }
 
         [Fact]
@@ -50,7 +52,7 @@ namespace FirmwareKit.PartitionTable.Tests
 
             using var ms = new MemoryStream(image);
 
-            Assert.Throws<InvalidDataException>(() => PartitionTableReader.FromStream(ms));
+            Assert.Throws<PartitionTableFormatException>(() => PartitionTableReader.FromStream(ms));
         }
 
         [Fact]
@@ -88,7 +90,7 @@ namespace FirmwareKit.PartitionTable.Tests
             Assert.False(table.IsMutable);
 
             var mbrTable = Assert.IsType<MbrPartitionTable>(table);
-            Assert.Throws<InvalidOperationException>(() => mbrTable.SetPartition(0, new MbrPartitionEntry { PartitionType = 0x07 }));
+            Assert.Throws<PartitionOperationException>(() => mbrTable.SetPartition(0, new MbrPartitionEntry { PartitionType = 0x07 }));
         }
 
         [Fact]
@@ -133,7 +135,7 @@ namespace FirmwareKit.PartitionTable.Tests
 
             using var stream = new MemoryStream(image);
 
-            Assert.Throws<InvalidDataException>(() => PartitionTableReader.FromStream(stream, mutable: false));
+            Assert.Throws<PartitionTableFormatException>(() => PartitionTableReader.FromStream(stream, mutable: false));
         }
 
         [Fact]
@@ -170,7 +172,7 @@ namespace FirmwareKit.PartitionTable.Tests
             WriteUInt32(image, 512 + fieldOffset, value);
 
             using var stream = new MemoryStream(image);
-            Assert.Throws<InvalidDataException>(() => PartitionTableReader.FromStream(stream, mutable: false));
+            Assert.Throws<PartitionTableFormatException>(() => PartitionTableReader.FromStream(stream, mutable: false));
         }
 
         [Fact]
@@ -184,7 +186,7 @@ namespace FirmwareKit.PartitionTable.Tests
             WriteUInt32(image, 512 + 84, 128);
 
             using var stream = new MemoryStream(image);
-            Assert.Throws<InvalidDataException>(() => PartitionTableReader.FromStream(stream, mutable: false));
+            Assert.Throws<PartitionTableFormatException>(() => PartitionTableReader.FromStream(stream, mutable: false));
         }
 
         [Fact]
@@ -330,7 +332,7 @@ namespace FirmwareKit.PartitionTable.Tests
 
             using var stream = new MemoryStream(image);
 
-            Assert.Throws<InvalidDataException>(() => PartitionTableReader.FromStream(stream, mutable: false));
+            Assert.Throws<PartitionTableFormatException>(() => PartitionTableReader.FromStream(stream, mutable: false));
         }
 
         [Fact]
@@ -342,7 +344,7 @@ namespace FirmwareKit.PartitionTable.Tests
 
             using var stream = new MemoryStream(image);
 
-            Assert.Throws<InvalidDataException>(() => PartitionTableReader.FromStream(stream, mutable: false));
+            Assert.Throws<PartitionTableFormatException>(() => PartitionTableReader.FromStream(stream, mutable: false));
         }
 
         [Fact]
@@ -357,7 +359,7 @@ namespace FirmwareKit.PartitionTable.Tests
             using var target = new MemoryStream(new byte[1304]);
 
             Action write = () => table.WriteToStream(target);
-            Assert.Throws<InvalidOperationException>(write);
+            Assert.Throws<PartitionOperationException>(write);
         }
 
         private static byte[] CreateEmptyMbrImage()
@@ -508,6 +510,328 @@ namespace FirmwareKit.PartitionTable.Tests
                 | (buffer[offset + 1] << 8)
                 | (buffer[offset + 2] << 16)
                 | (buffer[offset + 3] << 24));
+        }
+    }
+
+    public class CustomExceptionTests
+    {
+        [Fact]
+        public void PartitionTableFormatException_ContainsErrorCode()
+        {
+            var ex = new PartitionTableFormatException("test message", "TEST_CODE", PartitionTableType.Gpt);
+            Assert.Equal("TEST_CODE", ex.ErrorCode);
+            Assert.Equal(PartitionTableType.Gpt, ex.TableType);
+            Assert.Equal("test message", ex.Message);
+        }
+
+        [Fact]
+        public void PartitionTableChecksumException_ContainsChecksumKind()
+        {
+            var ex = new PartitionTableChecksumException("crc failed", "CRC_FAIL", "HeaderCrc", PartitionTableType.Gpt);
+            Assert.Equal("HeaderCrc", ex.ChecksumKind);
+            Assert.Equal(PartitionTableType.Gpt, ex.TableType);
+        }
+
+        [Fact]
+        public void PartitionOperationException_ContainsPartitionIndex()
+        {
+            var ex = new PartitionOperationException("read-only", "TABLE_READ_ONLY", 2, PartitionTableType.Mbr);
+            Assert.Equal(2, ex.PartitionIndex);
+            Assert.Equal(PartitionTableType.Mbr, ex.TableType);
+        }
+
+        [Fact]
+        public void PartitionTableRepairException_ContainsErrorCode()
+        {
+            var ex = new PartitionTableRepairException("repair failed", "REPAIR_FAIL", PartitionTableType.AmlogicEpt);
+            Assert.Equal("REPAIR_FAIL", ex.ErrorCode);
+            Assert.Equal(PartitionTableType.AmlogicEpt, ex.TableType);
+        }
+
+        [Fact]
+        public void PartitionTableException_IsBaseClass()
+        {
+            Assert.True(typeof(PartitionTableFormatException).IsSubclassOf(typeof(PartitionTableException)));
+            Assert.True(typeof(PartitionTableChecksumException).IsSubclassOf(typeof(PartitionTableException)));
+            Assert.True(typeof(PartitionOperationException).IsSubclassOf(typeof(PartitionTableException)));
+            Assert.True(typeof(PartitionTableRepairException).IsSubclassOf(typeof(PartitionTableException)));
+        }
+    }
+
+    public class PartitionQueryBuilderTests
+    {
+        [Fact]
+        public void FindGptPartitionByName_ReturnsMatchingPartition()
+        {
+            var table = PartitionTableBuilder.CreateGpt().Build(mutable: true) as GptPartitionTable;
+            Assert.NotNull(table);
+            table.AddPartition(new GptPartitionEntry
+            {
+                Name = "EFI",
+                PartitionType = Guid.Parse("C12A7328-F81F-11D2-BA4B-00A0C93EC93B"),
+                FirstLba = 2048,
+                LastLba = 4095
+            });
+
+            var result = PartitionQuery.FindGptPartitionByName(table, "EFI");
+            Assert.NotNull(result);
+            Assert.Equal("EFI", result.Name);
+        }
+
+        [Fact]
+        public void FindGptPartitionByName_ReturnsNullWhenNotFound()
+        {
+            var table = PartitionTableBuilder.CreateGpt().Build(mutable: true) as GptPartitionTable;
+            Assert.NotNull(table);
+            var result = PartitionQuery.FindGptPartitionByName(table, "NonExistent");
+            Assert.Null(result);
+        }
+
+        [Fact]
+        public void IndexOfGptPartitionByName_ReturnsCorrectIndex()
+        {
+            var table = PartitionTableBuilder.CreateGpt().Build(mutable: true) as GptPartitionTable;
+            Assert.NotNull(table);
+            table.AddPartition(new GptPartitionEntry { Name = "PartA", FirstLba = 2048, LastLba = 4095 });
+            table.AddPartition(new GptPartitionEntry { Name = "PartB", FirstLba = 4096, LastLba = 8191 });
+
+            Assert.Equal(0, PartitionQuery.IndexOfGptPartitionByName(table, "PartA"));
+            Assert.Equal(1, PartitionQuery.IndexOfGptPartitionByName(table, "PartB"));
+            Assert.Equal(-1, PartitionQuery.IndexOfGptPartitionByName(table, "PartC"));
+        }
+
+        [Fact]
+        public void FindGptPartitionsByType_ReturnsAllMatching()
+        {
+            var efiType = Guid.Parse("C12A7328-F81F-11D2-BA4B-00A0C93EC93B");
+            var table = PartitionTableBuilder.CreateGpt().Build(mutable: true) as GptPartitionTable;
+            Assert.NotNull(table);
+            table.AddPartition(new GptPartitionEntry { Name = "EFI1", PartitionType = efiType, FirstLba = 2048, LastLba = 4095 });
+            table.AddPartition(new GptPartitionEntry { Name = "Root", PartitionType = Guid.Parse("0FC63DAF-8483-4772-8E79-3D69D8477DE4"), FirstLba = 4096, LastLba = 8191 });
+            table.AddPartition(new GptPartitionEntry { Name = "EFI2", PartitionType = efiType, FirstLba = 8192, LastLba = 10239 });
+
+            var results = PartitionQuery.FindGptPartitionsByType(table, efiType);
+            Assert.Equal(2, results.Count);
+        }
+
+        [Fact]
+        public void GetGptFreeRanges_ReturnsCorrectRanges()
+        {
+            var table = PartitionTableBuilder.CreateGpt().Build(mutable: true) as GptPartitionTable;
+            Assert.NotNull(table);
+            table.AddPartition(new GptPartitionEntry { Name = "A", FirstLba = 2048, LastLba = 4095 });
+            table.AddPartition(new GptPartitionEntry { Name = "B", FirstLba = 8192, LastLba = 10239 });
+
+            var freeRanges = PartitionQuery.GetGptFreeRanges(table);
+            Assert.NotEmpty(freeRanges);
+            Assert.All(freeRanges, r => Assert.True(r.FirstLba <= r.LastLba));
+        }
+    }
+
+    public class PartitionTableBuilderTests
+    {
+        [Fact]
+        public void CreateGpt_BuildsValidEmptyGpt()
+        {
+            var table = PartitionTableBuilder.CreateGpt().Build() as GptPartitionTable;
+            Assert.NotNull(table);
+            Assert.Equal(PartitionTableType.Gpt, table.Type);
+            Assert.Equal(512, table.SectorSize);
+        }
+
+        [Fact]
+        public void CreateGpt_WithCustomSectorSize_BuildsValidGpt()
+        {
+            var table = PartitionTableBuilder.CreateGpt()
+                .WithSectorSize(4096)
+                .Build() as GptPartitionTable;
+            Assert.NotNull(table);
+            Assert.Equal(4096, table.SectorSize);
+        }
+
+        [Fact]
+        public void CreateGpt_WithCustomDiskGuid_PreservesGuid()
+        {
+            var guid = Guid.Parse("12345678-1234-1234-1234-123456789ABC");
+            var table = PartitionTableBuilder.CreateGpt()
+                .WithDiskGuid(guid)
+                .Build() as GptPartitionTable;
+            Assert.NotNull(table);
+            Assert.Equal(guid, table.DiskGuid);
+        }
+
+        [Fact]
+        public void CreateMbr_BuildsValidEmptyMbr()
+        {
+            var table = PartitionTableBuilder.CreateMbr().Build() as MbrPartitionTable;
+            Assert.NotNull(table);
+            Assert.Equal(PartitionTableType.Mbr, table.Type);
+            Assert.Equal(4, table.Partitions.Length);
+        }
+
+        [Fact]
+        public void CreateAmlogicEpt_BuildsValidAmlogicEptWithPartitions()
+        {
+            var table = PartitionTableBuilder.CreateAmlogicEpt().Build(mutable: true) as AmlogicPartitionTable;
+            Assert.NotNull(table);
+            Assert.Equal(PartitionTableType.AmlogicEpt, table.Type);
+            table.AddPartition(new AmlogicPartitionEntry { Name = "boot", Offset = 0, Size = 4096 });
+            Assert.Single(table.Partitions);
+        }
+
+        [Fact]
+        public void CreateGpt_ThenAddPartition_RoundTrips()
+        {
+            var table = PartitionTableBuilder.CreateGpt().Build(mutable: true) as GptPartitionTable;
+            Assert.NotNull(table);
+            table.AddPartition(new GptPartitionEntry
+            {
+                Name = "TestPart",
+                PartitionType = Guid.Parse("EBD0A0A2-B9E5-4433-87C0-68B6B72699C7"),
+                FirstLba = 2048,
+                LastLba = 204800
+            });
+
+            using var ms = new MemoryStream();
+            table.WriteToStream(ms);
+            ms.Position = 0;
+            var readBack = PartitionTableReader.FromStream(ms) as GptPartitionTable;
+            Assert.NotNull(readBack);
+            Assert.Single(readBack.Partitions);
+            Assert.Equal("TestPart", readBack.Partitions[0].Name);
+        }
+    }
+
+    public class GptBackupHeaderRecoveryTests
+    {
+        [Fact]
+        public void Gpt_WithCorruptedPrimaryHeaderCrc_CanStillParse()
+        {
+            var table = PartitionTableBuilder.CreateGpt().Build(mutable: true) as GptPartitionTable;
+            Assert.NotNull(table);
+            table.AddPartition(new GptPartitionEntry
+            {
+                Name = "TestData",
+                FirstLba = 2048,
+                LastLba = 4095
+            });
+
+            using var ms = new MemoryStream();
+            table.WriteToStream(ms);
+            byte[] image = ms.ToArray();
+
+            int crcOffset = 512 + 16;
+            image[crcOffset] ^= 0xFF;
+            image[crcOffset + 1] ^= 0xFF;
+            image[crcOffset + 2] ^= 0xFF;
+            image[crcOffset + 3] ^= 0xFF;
+
+            using var readStream = new MemoryStream(image, writable: false);
+            var recovered = PartitionTableReader.FromStream(readStream) as GptPartitionTable;
+            Assert.NotNull(recovered);
+            Assert.Equal(PartitionTableType.Gpt, recovered.Type);
+            Assert.False(recovered.IsHeaderCrcValid);
+        }
+    }
+
+    public class MbrOverlapDiagnosticsTests
+    {
+        [Fact]
+        public void Mbr_WithOverlappingPartitions_ReportsOverlap()
+        {
+            var table = PartitionTableBuilder.CreateMbr().Build(mutable: true) as MbrPartitionTable;
+            Assert.NotNull(table);
+            table.SetPartition(0, new MbrPartitionEntry { Status = 0x00, PartitionType = 0x07, FirstLba = 100, SectorCount = 200 });
+            table.SetPartition(1, new MbrPartitionEntry { Status = 0x00, PartitionType = 0x07, FirstLba = 200, SectorCount = 200 });
+
+            var report = PartitionTableDiagnostics.Analyze(table);
+            Assert.Contains(report.Issues, i => i.Code == "MBR_OVERLAP");
+        }
+
+        [Fact]
+        public void Mbr_WithNonOverlappingPartitions_NoOverlapIssue()
+        {
+            var table = PartitionTableBuilder.CreateMbr().Build(mutable: true) as MbrPartitionTable;
+            Assert.NotNull(table);
+            table.SetPartition(0, new MbrPartitionEntry { Status = 0x00, PartitionType = 0x07, FirstLba = 100, SectorCount = 100 });
+            table.SetPartition(1, new MbrPartitionEntry { Status = 0x00, PartitionType = 0x07, FirstLba = 200, SectorCount = 100 });
+
+            var report = PartitionTableDiagnostics.Analyze(table);
+            Assert.DoesNotContain(report.Issues, i => i.Code == "MBR_OVERLAP");
+        }
+    }
+
+    public class PartitionTableParserRegistryTests
+    {
+        [Fact]
+        public void DefaultRegistry_ContainsThreeParsers()
+        {
+            var registry = PartitionTableParserRegistry.Default;
+            Assert.Equal(3, registry.Parsers.Count);
+        }
+
+        [Fact]
+        public void DefaultRegistry_ParsersInCorrectPriorityOrder()
+        {
+            var registry = PartitionTableParserRegistry.Default;
+            Assert.Equal(PartitionTableType.AmlogicEpt, registry.Parsers[0].SupportedType);
+            Assert.Equal(PartitionTableType.Gpt, registry.Parsers[1].SupportedType);
+            Assert.Equal(PartitionTableType.Mbr, registry.Parsers[2].SupportedType);
+        }
+
+        [Fact]
+        public void Registry_ParseGptImage_ReturnsGptTable()
+        {
+            var table = PartitionTableBuilder.CreateGpt().Build(mutable: true);
+            using var ms = new MemoryStream();
+            table.WriteToStream(ms);
+            ms.Position = 0;
+
+            var registry = new PartitionTableParserRegistry();
+            registry.Register(new TestParser(PartitionTableType.Gpt, 0));
+            var result = registry.TryParse(ms, mutable: false, sectorSize: 512);
+            Assert.NotNull(result);
+            Assert.Equal(PartitionTableType.Gpt, result.Type);
+        }
+
+        [Fact]
+        public void Registry_Unregister_RemovesParser()
+        {
+            var registry = new PartitionTableParserRegistry();
+            registry.Register(new TestParser(PartitionTableType.Gpt, 0));
+            Assert.Single(registry.Parsers);
+            Assert.True(registry.Unregister(PartitionTableType.Gpt));
+            Assert.Empty(registry.Parsers);
+        }
+
+        [Fact]
+        public void Registry_Clear_RemovesAllParsers()
+        {
+            var freshRegistry = new PartitionTableParserRegistry();
+            freshRegistry.Register(new TestParser(PartitionTableType.AmlogicEpt, 0));
+            freshRegistry.Register(new TestParser(PartitionTableType.Gpt, 1));
+            Assert.Equal(2, freshRegistry.Parsers.Count);
+            freshRegistry.Clear();
+            Assert.Empty(freshRegistry.Parsers);
+        }
+
+        private sealed class TestParser : IPartitionTableParser
+        {
+            private readonly PartitionTableType _type;
+
+            public TestParser(PartitionTableType type, int priority)
+            {
+                _type = type;
+                Priority = priority;
+            }
+
+            public PartitionTableType SupportedType => _type;
+            public int Priority { get; }
+
+            public IPartitionTable? TryParse(Stream stream, bool mutable, int sectorSize)
+            {
+                return PartitionTableParser.FromStream(stream, mutable, sectorSize);
+            }
         }
     }
 }

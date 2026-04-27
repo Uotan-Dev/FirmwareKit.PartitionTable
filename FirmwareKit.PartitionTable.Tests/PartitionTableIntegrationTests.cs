@@ -1,4 +1,6 @@
 using FirmwareKit.PartitionTable.Cli;
+using FirmwareKit.PartitionTable.Exceptions;
+using FirmwareKit.PartitionTable.Json.Services;
 using FirmwareKit.PartitionTable.Models;
 using FirmwareKit.PartitionTable.Services;
 using FirmwareKit.PartitionTable.Util;
@@ -191,7 +193,7 @@ namespace FirmwareKit.PartitionTable.Tests
                 StrictSectorSize = true
             };
 
-            await Assert.ThrowsAsync<InvalidDataException>(() => PartitionTableReader.FromStreamAsync(stream, mutable: false, options: options));
+            await Assert.ThrowsAsync<PartitionTableFormatException>(() => PartitionTableReader.FromStreamAsync(stream, mutable: false, options: options));
 
             stream.Position = 0;
             var parsed = await PartitionTableReader.FromStreamAsync(stream, mutable: false, options: new PartitionReadOptions { PreferredSectorSize = 4096, StrictSectorSize = true });
@@ -412,7 +414,7 @@ namespace FirmwareKit.PartitionTable.Tests
             string tempPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".img");
             try
             {
-                Assert.Throws<InvalidOperationException>(() => PartitionTableWriter.WriteToFileAtomic(table, tempPath));
+                Assert.Throws<PartitionOperationException>(() => PartitionTableWriter.WriteToFileAtomic(table, tempPath));
 
                 PartitionTableWriter.WriteToFileAtomic(table, tempPath, requireConfirmation: true, confirmation: "I_UNDERSTAND_PARTITION_WRITE");
                 var reopened = Assert.IsType<MbrPartitionTable>(PartitionTableReader.FromFile(tempPath));
@@ -457,7 +459,7 @@ namespace FirmwareKit.PartitionTable.Tests
                 {
                     PartitionTableReader.FromStream(stream, mutable: false);
                 }
-                catch (InvalidDataException)
+                catch (PartitionTableFormatException)
                 {
                     // expected for malformed samples
                 }

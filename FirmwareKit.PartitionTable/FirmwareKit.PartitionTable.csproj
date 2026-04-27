@@ -1,22 +1,40 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>netstandard2.0;net8.0;net10.0</TargetFrameworks>
-    <Nullable>enable</Nullable>
+    <TargetFrameworks>net10.0;net9.0;net8.0;net6.0;netstandard2.1;netstandard2.0</TargetFrameworks>
     <LangVersion>10.0</LangVersion>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <DocumentationFile>bin\$(Configuration)\$(TargetFramework)\FirmwareKit.PartitionTable.xml</DocumentationFile>
-  </PropertyGroup>
-
-  <PropertyGroup>
-    <PackageId>FirmwareKit.PartitionTable</PackageId>
-    <Version>1.0.0</Version>
-    <Description>Partition table reader/writer for MBR and GPT with validation and repair utilities.</Description>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <Authors>ZZi_Cai</Authors>
+    <Title>FirmwareKit.PartitionTable</Title>
+    <Description>A .NET library for reading, creating, editing, validating, and repairing MBR, GPT, and Amlogic EPT partition tables with atomic write support.</Description>
+    <RepositoryUrl>https://github.com/Uotan-Dev/FirmwareKit.PartitionTable</RepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageTags>partition-table;mbr;gpt;amlogic-ept;firmware;disk;uefi;bootloader</PackageTags>
+    <Version>1.0.0</Version>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryType>git</RepositoryType>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <SuppressTfmSupportBuildWarnings>true</SuppressTfmSupportBuildWarnings>
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="FirmwareKit.PartitionTable.Json" />
+    <InternalsVisibleTo Include="FirmwareKit.PartitionTable.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Crc32.NET" Version="1.2.0" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.200" PrivateAssets="All" />
   </ItemGroup>
 
 </Project>

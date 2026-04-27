@@ -1,35 +1,27 @@
 using FirmwareKit.PartitionTable.Interfaces;
 using FirmwareKit.PartitionTable.Models;
+using FirmwareKit.PartitionTable.Services;
 using FirmwareKit.PartitionTable.Util;
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Text;
 using System.Text.Json;
 
-namespace FirmwareKit.PartitionTable.Services
+namespace FirmwareKit.PartitionTable.Json.Services
 {
     /// <summary>
-    /// Serializes partition tables to/from a portable JSON manifest.
-    /// 将分区表序列化/反序列化为可移植 JSON 清单。
+    /// Provides JSON manifest import/export for partition tables.
+    /// 提供分区表的 JSON 清单导入/导出功能。
     /// </summary>
     public static class PartitionTableManifestSerializer
     {
-        private const uint AmlogicHeaderMagic = 0x0054504D;
-        private const uint AmlogicVersionWord0 = 0x302E3130;
-        private const uint AmlogicVersionWord1 = 0x30302E30;
-        private const uint AmlogicVersionWord2 = 0x00000000;
-        private const int AmlogicHeaderSize = 24;
-        private const int AmlogicPartitionEntrySize = 40;
-        private const int AmlogicPartitionSlotCount = 32;
-
         /// <summary>
-        /// Exports a partition table to JSON manifest text.
-        /// 将分区表导出为 JSON 清单文本。
+        /// Exports a partition table to a JSON manifest string.
+        /// 将分区表导出为 JSON 清单字符串。
         /// </summary>
         /// <param name="table">The partition table to export. / 待导出的分区表。</param>
-        /// <param name="indented">Whether to pretty-print JSON. / 是否格式化输出 JSON。</param>
-        /// <returns>Serialized JSON manifest. / 序列化后的 JSON 清单。</returns>
+        /// <param name="indented">Whether to indent the JSON output. / 是否缩进 JSON 输出。</param>
+        /// <returns>The JSON manifest string. / JSON 清单字符串。</returns>
         public static string ExportToJson(IPartitionTable table, bool indented = true)
         {
             if (table == null) throw new ArgumentNullException(nameof(table));
@@ -61,12 +53,12 @@ namespace FirmwareKit.PartitionTable.Services
         }
 
         /// <summary>
-        /// Exports a partition table to a JSON file.
-        /// 将分区表导出到 JSON 文件。
+        /// Exports a partition table to a JSON manifest file.
+        /// 将分区表导出为 JSON 清单文件。
         /// </summary>
         /// <param name="table">The partition table to export. / 待导出的分区表。</param>
-        /// <param name="path">The destination JSON file path. / 目标 JSON 文件路径。</param>
-        /// <param name="indented">Whether to pretty-print JSON. / 是否格式化输出 JSON。</param>
+        /// <param name="path">The output file path. / 输出文件路径。</param>
+        /// <param name="indented">Whether to indent the JSON output. / 是否缩进 JSON 输出。</param>
         public static void ExportToFile(IPartitionTable table, string path, bool indented = true)
         {
             if (table == null) throw new ArgumentNullException(nameof(table));
@@ -76,11 +68,11 @@ namespace FirmwareKit.PartitionTable.Services
         }
 
         /// <summary>
-        /// Imports a JSON manifest into a portable partition manifest model.
-        /// 将 JSON 清单导入为可移植分区清单模型。
+        /// Imports a partition table manifest from a JSON string.
+        /// 从 JSON 字符串导入分区表清单。
         /// </summary>
-        /// <param name="json">The JSON manifest text. / JSON 清单文本。</param>
-        /// <returns>The parsed manifest model. / 解析后的清单模型。</returns>
+        /// <param name="json">The JSON manifest string. / JSON 清单字符串。</param>
+        /// <returns>The deserialized manifest. / 反序列化的清单。</returns>
         public static PartitionTableManifest ImportFromJson(string json)
         {
             if (json == null) throw new ArgumentNullException(nameof(json));
@@ -91,15 +83,21 @@ namespace FirmwareKit.PartitionTable.Services
                 throw new InvalidOperationException("Failed to deserialize partition table manifest.");
             }
 
+            if (manifest.SchemaVersion > PartitionTableManifest.CurrentSchemaVersion)
+            {
+                throw new InvalidOperationException(
+                    $"Manifest schema version {manifest.SchemaVersion} is not supported. The maximum supported version is {PartitionTableManifest.CurrentSchemaVersion}.");
+            }
+
             return manifest;
         }
 
         /// <summary>
-        /// Imports a JSON manifest from a file.
-        /// 从文件导入 JSON 清单。
+        /// Imports a partition table manifest from a JSON file.
+        /// 从 JSON 文件导入分区表清单。
         /// </summary>
-        /// <param name="path">The manifest file path. / 清单文件路径。</param>
-        /// <returns>The parsed manifest model. / 解析后的清单模型。</returns>
+        /// <param name="path">The input file path. / 输入文件路径。</param>
+        /// <returns>The deserialized manifest. / 反序列化的清单。</returns>
         public static PartitionTableManifest ImportFromFile(string path)
         {
             if (path == null) throw new ArgumentNullException(nameof(path));
@@ -108,12 +106,12 @@ namespace FirmwareKit.PartitionTable.Services
         }
 
         /// <summary>
-        /// Creates a mutable partition table from a manifest.
-        /// 根据清单创建可变分区表。
+        /// Reconstructs a partition table from a manifest object.
+        /// 从清单对象重建分区表。
         /// </summary>
-        /// <param name="manifest">The source manifest. / 源清单。</param>
-        /// <param name="mutable">Whether the returned table should be editable. / 返回的表是否可编辑。</param>
-        /// <returns>The materialized table. / 生成的分区表。</returns>
+        /// <param name="manifest">The manifest to reconstruct from. / 用于重建的清单。</param>
+        /// <param name="mutable">Whether the resulting table should be mutable. / 结果表是否可变。</param>
+        /// <returns>The reconstructed partition table. / 重建的分区表。</returns>
         public static IPartitionTable ToPartitionTable(PartitionTableManifest manifest, bool mutable = true)
         {
             if (manifest == null) throw new ArgumentNullException(nameof(manifest));
@@ -138,12 +136,12 @@ namespace FirmwareKit.PartitionTable.Services
         }
 
         /// <summary>
-        /// Creates a partition table from a manifest JSON payload.
-        /// 根据清单 JSON 生成分区表。
+        /// Reconstructs a partition table from a JSON manifest string.
+        /// 从 JSON 清单字符串重建分区表。
         /// </summary>
-        /// <param name="json">The manifest JSON. / 清单 JSON。</param>
-        /// <param name="mutable">Whether the returned table should be editable. / 返回的表是否可编辑。</param>
-        /// <returns>The materialized table. / 生成的分区表。</returns>
+        /// <param name="json">The JSON manifest string. / JSON 清单字符串。</param>
+        /// <param name="mutable">Whether the resulting table should be mutable. / 结果表是否可变。</param>
+        /// <returns>The reconstructed partition table. / 重建的分区表。</returns>
         public static IPartitionTable ToPartitionTable(string json, bool mutable = true)
         {
             return ToPartitionTable(ImportFromJson(json), mutable);
@@ -159,21 +157,13 @@ namespace FirmwareKit.PartitionTable.Services
 
         private static byte[] BuildMbrImage(IReadOnlyList<MbrPartitionEntry> partitions)
         {
-            var buffer = new byte[512];
+            var entries = new MbrPartitionEntry[4];
             for (int i = 0; i < 4; i++)
             {
-                int offset = 446 + (i * 16);
-                MbrPartitionEntry partition = i < partitions.Count && partitions[i] != null ? partitions[i] : new MbrPartitionEntry();
-                buffer[offset] = partition.Status;
-                CopyBytes(partition.FirstCHS, buffer, offset + 1, 3);
-                buffer[offset + 4] = partition.PartitionType;
-                CopyBytes(partition.LastCHS, buffer, offset + 5, 3);
-                WriteUInt32LittleEndian(buffer, offset + 8, partition.FirstLba);
-                WriteUInt32LittleEndian(buffer, offset + 12, partition.SectorCount);
+                entries[i] = i < partitions.Count && partitions[i] != null ? partitions[i] : new MbrPartitionEntry();
             }
 
-            WriteUInt16LittleEndian(buffer, 510, 0xAA55);
-            return buffer;
+            return PartitionTableParser.BuildMbrImage(entries, null!);
         }
 
         private static byte[] BuildGptImage(PartitionTableManifest manifest)
@@ -193,244 +183,37 @@ namespace FirmwareKit.PartitionTable.Services
                 lastUsableLba = backupEntriesLba > 0 ? backupEntriesLba - 1 : 0;
             }
 
-            var entryBuffer = BuildGptEntryBuffer(manifest.GptPartitions, partitionCount, partitionEntrySize);
+            var entryBuffer = PartitionTableParser.BuildGptEntryBuffer(manifest.GptPartitions, partitionCount, partitionEntrySize);
             uint entryBufferCrc = Crc32.Compute(entryBuffer);
 
             var buffer = new byte[checked((int)(totalSectors * (ulong)sectorSize))];
-            CopyBytes(BuildProtectiveMbr(), buffer, 0, 512);
+            byte[] protectiveMbr = PartitionTableParser.BuildProtectiveMbr();
+            Buffer.BlockCopy(protectiveMbr, 0, buffer, 0, Math.Min(protectiveMbr.Length, buffer.Length));
 
             Guid diskGuid = manifest.DiskGuid ?? Guid.NewGuid();
-            byte[] primaryHeader = BuildGptHeader(
-                firstUsableLba,
-                lastUsableLba,
-                diskGuid,
-                currentLba: 1,
-                backupLba: backupLba,
-                partitionEntriesLba: 2,
-                partitionCount: partitionCount,
-                partitionEntrySize: partitionEntrySize,
-                partitionEntryArrayCrc32: entryBufferCrc,
-                sectorSize: sectorSize);
+            var header = new PartitionTableParser.GptHeader
+            {
+                FirstUsableLba = firstUsableLba,
+                LastUsableLba = lastUsableLba,
+                DiskGuid = diskGuid,
+                PartitionsCount = partitionCount,
+                PartitionEntrySize = partitionEntrySize
+            };
 
-            CopyBytes(primaryHeader, buffer, sectorSize, primaryHeader.Length);
-            CopyBytes(entryBuffer, buffer, checked((int)(2 * (ulong)sectorSize)), entryBuffer.Length);
-            CopyBytes(entryBuffer, buffer, checked((int)(backupEntriesLba * (ulong)sectorSize)), entryBuffer.Length);
+            byte[] primaryHeader = PartitionTableParser.BuildGptHeader(header, currentLba: 1, backupLba: backupLba, partitionEntriesLba: 2, partitionEntryArrayCrc32: entryBufferCrc, sectorSize: sectorSize);
+            Buffer.BlockCopy(primaryHeader, 0, buffer, sectorSize, primaryHeader.Length);
+            Buffer.BlockCopy(entryBuffer, 0, buffer, checked((int)(2 * (ulong)sectorSize)), entryBuffer.Length);
+            Buffer.BlockCopy(entryBuffer, 0, buffer, checked((int)(backupEntriesLba * (ulong)sectorSize)), entryBuffer.Length);
 
-            byte[] backupHeader = BuildGptHeader(
-                firstUsableLba,
-                lastUsableLba,
-                diskGuid,
-                currentLba: backupLba,
-                backupLba: 1,
-                partitionEntriesLba: backupEntriesLba,
-                partitionCount: partitionCount,
-                partitionEntrySize: partitionEntrySize,
-                partitionEntryArrayCrc32: entryBufferCrc,
-                sectorSize: sectorSize);
-
-            CopyBytes(backupHeader, buffer, checked((int)(backupLba * (ulong)sectorSize)), backupHeader.Length);
+            byte[] backupHeader = PartitionTableParser.BuildGptHeader(header, currentLba: backupLba, backupLba: 1, partitionEntriesLba: backupEntriesLba, partitionEntryArrayCrc32: entryBufferCrc, sectorSize: sectorSize);
+            Buffer.BlockCopy(backupHeader, 0, buffer, checked((int)(backupLba * (ulong)sectorSize)), backupHeader.Length);
             return buffer;
         }
 
         private static byte[] BuildAmlogicImage(PartitionTableManifest manifest)
         {
             IReadOnlyList<AmlogicPartitionEntry> partitions = manifest.AmlogicPartitions ?? new List<AmlogicPartitionEntry>();
-            int count = Math.Min(partitions.Count, AmlogicPartitionSlotCount);
-            var buffer = new byte[AmlogicHeaderSize + (AmlogicPartitionSlotCount * AmlogicPartitionEntrySize)];
-
-            WriteUInt32LittleEndian(buffer, 0, AmlogicHeaderMagic);
-            WriteUInt32LittleEndian(buffer, 4, AmlogicVersionWord0);
-            WriteUInt32LittleEndian(buffer, 8, AmlogicVersionWord1);
-            WriteUInt32LittleEndian(buffer, 12, AmlogicVersionWord2);
-            WriteUInt32LittleEndian(buffer, 16, (uint)count);
-            WriteUInt32LittleEndian(buffer, 20, 0);
-
-            for (int i = 0; i < count; i++)
-            {
-                AmlogicPartitionEntry entry = partitions[i] ?? new AmlogicPartitionEntry();
-                int offset = AmlogicHeaderSize + (i * AmlogicPartitionEntrySize);
-                WriteAsciiName(buffer, offset, 16, entry.Name);
-                WriteUInt64LittleEndian(buffer, offset + 16, entry.Size);
-                WriteUInt64LittleEndian(buffer, offset + 24, entry.Offset);
-                WriteUInt32LittleEndian(buffer, offset + 32, entry.MaskFlags);
-                WriteUInt32LittleEndian(buffer, offset + 36, 0);
-            }
-
-            WriteUInt32LittleEndian(buffer, 20, ComputeAmlogicChecksum(buffer, count));
-            return buffer;
-        }
-
-        private static byte[] BuildProtectiveMbr()
-        {
-            var buffer = new byte[512];
-            buffer[446 + 4] = 0xEE;
-            WriteUInt32LittleEndian(buffer, 446 + 8, 1);
-            WriteUInt32LittleEndian(buffer, 446 + 12, uint.MaxValue);
-            WriteUInt16LittleEndian(buffer, 510, 0xAA55);
-            return buffer;
-        }
-
-        private static byte[] BuildGptEntryBuffer(IReadOnlyList<GptPartitionEntry> partitions, uint partitionCount, uint partitionEntrySize)
-        {
-            int entrySize = checked((int)partitionEntrySize);
-            int tableLength = checked((int)partitionCount * entrySize);
-            var buffer = new byte[tableLength];
-
-            for (int i = 0; i < partitionCount; i++)
-            {
-                if (i >= partitions.Count)
-                {
-                    continue;
-                }
-
-                GptPartitionEntry entry = partitions[i];
-                if (entry == null || entry.IsEmpty)
-                {
-                    continue;
-                }
-
-                int offset = i * entrySize;
-                CopyBytes(entry.PartitionType.ToByteArray(), buffer, offset, 16);
-                CopyBytes(entry.PartitionId.ToByteArray(), buffer, offset + 16, 16);
-                WriteUInt64LittleEndian(buffer, offset + 32, entry.FirstLba);
-                WriteUInt64LittleEndian(buffer, offset + 40, entry.LastLba);
-                WriteUInt64LittleEndian(buffer, offset + 48, entry.Attributes);
-                WritePartitionName(buffer, offset + 56, entrySize - 56, entry.Name);
-            }
-
-            return buffer;
-        }
-
-        private static byte[] BuildGptHeader(
-            ulong firstUsableLba,
-            ulong lastUsableLba,
-            Guid diskGuid,
-            ulong currentLba,
-            ulong backupLba,
-            ulong partitionEntriesLba,
-            uint partitionCount,
-            uint partitionEntrySize,
-            uint partitionEntryArrayCrc32,
-            int sectorSize)
-        {
-            var buffer = new byte[sectorSize];
-            Encoding.ASCII.GetBytes("EFI PART").CopyTo(buffer, 0);
-            WriteUInt32LittleEndian(buffer, 8, 0x00010000);
-            WriteUInt32LittleEndian(buffer, 12, 92);
-            WriteUInt32LittleEndian(buffer, 16, 0);
-            WriteUInt32LittleEndian(buffer, 20, 0);
-            WriteUInt64LittleEndian(buffer, 24, currentLba);
-            WriteUInt64LittleEndian(buffer, 32, backupLba);
-            WriteUInt64LittleEndian(buffer, 40, firstUsableLba);
-            WriteUInt64LittleEndian(buffer, 48, lastUsableLba);
-            diskGuid.ToByteArray().CopyTo(buffer, 56);
-            WriteUInt64LittleEndian(buffer, 72, partitionEntriesLba);
-            WriteUInt32LittleEndian(buffer, 80, partitionCount);
-            WriteUInt32LittleEndian(buffer, 84, partitionEntrySize);
-            WriteUInt32LittleEndian(buffer, 88, partitionEntryArrayCrc32);
-            var headerPrefix = new byte[92];
-            Buffer.BlockCopy(buffer, 0, headerPrefix, 0, 92);
-            WriteUInt32LittleEndian(buffer, 16, Crc32.ComputeWithExclusion(headerPrefix, 16, 4));
-            return buffer;
-        }
-
-        private static uint ComputeAmlogicChecksum(byte[] tableBytes, int partitionsCount)
-        {
-            int count = Math.Min(Math.Max(partitionsCount, 0), AmlogicPartitionSlotCount);
-            uint checksum = 0;
-            int firstPartitionOffset = AmlogicHeaderSize;
-            int wordsPerPartition = AmlogicPartitionEntrySize / 4;
-
-            for (int i = 0; i < count; i++)
-            {
-                int cursor = firstPartitionOffset;
-                for (int j = 0; j < wordsPerPartition; j++)
-                {
-                    checksum += ReadUInt32LittleEndian(tableBytes, cursor);
-                    cursor += 4;
-                }
-            }
-
-            return checksum;
-        }
-
-        private static void WritePartitionName(byte[] buffer, int offset, int availableLength, string? name)
-        {
-            if (availableLength <= 0)
-            {
-                return;
-            }
-
-            Array.Clear(buffer, offset, availableLength);
-            if (string.IsNullOrEmpty(name))
-            {
-                return;
-            }
-
-            byte[] nameBytes = Encoding.Unicode.GetBytes(name);
-            int length = Math.Min(nameBytes.Length, availableLength);
-            Buffer.BlockCopy(nameBytes, 0, buffer, offset, length);
-        }
-
-        private static void WriteAsciiName(byte[] buffer, int offset, int maxLength, string? name)
-        {
-            Array.Clear(buffer, offset, maxLength);
-            if (string.IsNullOrEmpty(name))
-            {
-                return;
-            }
-
-            string normalized = name ?? string.Empty;
-            if (normalized.Length > maxLength - 1)
-            {
-                normalized = normalized.Substring(0, maxLength - 1);
-            }
-
-            byte[] bytes = Encoding.ASCII.GetBytes(normalized);
-            Buffer.BlockCopy(bytes, 0, buffer, offset, Math.Min(bytes.Length, maxLength - 1));
-        }
-
-        private static void CopyBytes(byte[] source, byte[] destination, int destinationOffset, int length)
-        {
-            if (source == null)
-            {
-                return;
-            }
-
-            Buffer.BlockCopy(source, 0, destination, destinationOffset, Math.Min(length, source.Length));
-        }
-
-        private static ushort ReadUInt16LittleEndian(byte[] source, int offset)
-        {
-            return (ushort)(source[offset] | (source[offset + 1] << 8));
-        }
-
-        private static uint ReadUInt32LittleEndian(byte[] source, int offset)
-        {
-            return (uint)(source[offset]
-                | (source[offset + 1] << 8)
-                | (source[offset + 2] << 16)
-                | (source[offset + 3] << 24));
-        }
-
-        private static void WriteUInt16LittleEndian(byte[] buffer, int offset, ushort value)
-        {
-            buffer[offset] = (byte)value;
-            buffer[offset + 1] = (byte)(value >> 8);
-        }
-
-        private static void WriteUInt32LittleEndian(byte[] buffer, int offset, uint value)
-        {
-            buffer[offset] = (byte)value;
-            buffer[offset + 1] = (byte)(value >> 8);
-            buffer[offset + 2] = (byte)(value >> 16);
-            buffer[offset + 3] = (byte)(value >> 24);
-        }
-
-        private static void WriteUInt64LittleEndian(byte[] buffer, int offset, ulong value)
-        {
-            WriteUInt32LittleEndian(buffer, offset, (uint)value);
-            WriteUInt32LittleEndian(buffer, offset + 4, (uint)(value >> 32));
+            return PartitionTableParser.BuildAmlogicEptImage(null, partitions);
         }
     }
 }

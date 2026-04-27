@@ -30,7 +30,7 @@ namespace FirmwareKit.PartitionTable.Services
             {
                 AnalyzeMbr(mbr, report);
             }
-            else if (table is global::FirmwareKit.PartitionTable.Models.AmlogicPartitionTable amlogic)
+            else if (table is AmlogicPartitionTable amlogic)
             {
                 AnalyzeAmlogicEpt(amlogic, report);
             }
@@ -45,8 +45,10 @@ namespace FirmwareKit.PartitionTable.Services
                 report.Issues.Add(new PartitionDiagnosticIssue
                 {
                     Code = "GPT_HEADER_CRC",
-                    Message = "GPT primary header CRC mismatch.",
-                    Severity = PartitionIssueSeverity.Error,
+                    Message = table.IsRecoveredFromBackup
+                        ? "GPT primary header CRC mismatch; table recovered from backup header."
+                        : "GPT primary header CRC mismatch.",
+                    Severity = table.IsRecoveredFromBackup ? PartitionIssueSeverity.Warning : PartitionIssueSeverity.Error,
                     CanAutoRepair = true
                 });
             }
@@ -162,9 +164,56 @@ namespace FirmwareKit.PartitionTable.Services
                     CanAutoRepair = false
                 });
             }
+
+            var intervals = new List<(ulong Start, ulong End)>();
+            for (int i = 0; i < partitions.Length; i++)
+            {
+                MbrPartitionEntry entry = partitions[i];
+                if (entry.IsEmpty || entry.SectorCount == 0)
+                {
+                    continue;
+                }
+
+                ulong end;
+                try
+                {
+                    end = checked((ulong)entry.FirstLba + entry.SectorCount - 1);
+                }
+                catch (OverflowException)
+                {
+                    report.Issues.Add(new PartitionDiagnosticIssue
+                    {
+                        Code = "MBR_LBA_OVERFLOW",
+                        Message = "An MBR partition has an overflowing LBA range.",
+                        Severity = PartitionIssueSeverity.Error,
+                        CanAutoRepair = false
+                    });
+                    continue;
+                }
+
+                intervals.Add((entry.FirstLba, end));
+            }
+
+            intervals.Sort((a, b) => a.Start.CompareTo(b.Start));
+            for (int i = 1; i < intervals.Count; i++)
+            {
+                var previous = intervals[i - 1];
+                var current = intervals[i];
+                if (IntervalsOverlap(previous.Start, previous.End, current.Start, current.End))
+                {
+                    report.Issues.Add(new PartitionDiagnosticIssue
+                    {
+                        Code = "MBR_OVERLAP",
+                        Message = "MBR partitions contain overlapping LBA ranges.",
+                        Severity = PartitionIssueSeverity.Error,
+                        CanAutoRepair = false
+                    });
+                    return;
+                }
+            }
         }
 
-        private static void AnalyzeAmlogicEpt(global::FirmwareKit.PartitionTable.Models.AmlogicPartitionTable table, PartitionDiagnosticsReport report)
+        private static void AnalyzeAmlogicEpt(AmlogicPartitionTable table, PartitionDiagnosticsReport report)
         {
             if (table.Partitions.Count == 0)
             {

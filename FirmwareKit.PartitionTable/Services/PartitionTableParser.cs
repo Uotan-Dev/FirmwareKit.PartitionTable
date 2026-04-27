@@ -1,3 +1,4 @@
+using FirmwareKit.PartitionTable.Exceptions;
 using FirmwareKit.PartitionTable.Interfaces;
 using FirmwareKit.PartitionTable.Models;
 using FirmwareKit.PartitionTable.Util;
@@ -90,13 +91,18 @@ namespace FirmwareKit.PartitionTable.Services
                         && options.PreferredSectorSize.HasValue
                         && ContainsProtectivePartition(mbr.Partitions))
                     {
-                        throw new InvalidDataException($"GPT table was not found with strict sector size {options.PreferredSectorSize.Value}.");
+                        throw new PartitionTableFormatException(
+                            $"GPT table was not found with strict sector size {options.PreferredSectorSize.Value}.",
+                            "GPT_STRICT_SECTOR_SIZE_NOT_FOUND",
+                            PartitionTableType.Gpt);
                     }
 
                     return new MbrPartitionTable(mbr, mutable);
                 }
 
-                throw new InvalidDataException("No valid Amlogic EPT, MBR, or GPT partition table could be identified from the stream.");
+                throw new PartitionTableFormatException(
+                    "No valid Amlogic EPT, MBR, or GPT partition table could be identified from the stream.",
+                    "FORMAT_NOT_RECOGNIZED");
             }
             finally
             {
@@ -104,7 +110,7 @@ namespace FirmwareKit.PartitionTable.Services
             }
         }
 
-        private static global::FirmwareKit.PartitionTable.Models.AmlogicPartitionTable? TryReadAmlogicEpt(Stream stream, bool mutable)
+        internal static AmlogicPartitionTable? TryReadAmlogicEpt(Stream stream, bool mutable)
         {
             try
             {
@@ -155,7 +161,7 @@ namespace FirmwareKit.PartitionTable.Services
                     });
                 }
 
-                return new global::FirmwareKit.PartitionTable.Models.AmlogicPartitionTable(
+                return new AmlogicPartitionTable(
                     new[] { version0, version1, version2 },
                     recordedChecksum,
                     partitions,
@@ -249,6 +255,16 @@ namespace FirmwareKit.PartitionTable.Services
             return descriptor.IsValid;
         }
 
+        internal static MbrPartitionTable? TryReadMbrTable(Stream stream, bool mutable)
+        {
+            if (TryReadMbr(stream, out var descriptor) && descriptor.IsValid)
+            {
+                return new MbrPartitionTable(descriptor, mutable);
+            }
+
+            return null;
+        }
+
         private static bool HasValidMbrPartitionStatus(MbrPartitionEntry[] partitions)
         {
             for (int i = 0; i < partitions.Length; i++)
@@ -316,7 +332,7 @@ namespace FirmwareKit.PartitionTable.Services
             return null;
         }
 
-        private static GptPartitionTable? TryReadGptWithSectorSize(Stream stream, bool mutable, int sectorSize)
+        internal static GptPartitionTable? TryReadGptWithSectorSize(Stream stream, bool mutable, int sectorSize)
         {
             try
             {
@@ -330,46 +346,123 @@ namespace FirmwareKit.PartitionTable.Services
                     return null;
                 }
 
-                var header = new GptHeader
-                {
-                    Signature = GptSignature,
-                    Revision = ReadUInt32LittleEndian(headerBytes, 8),
-                    HeaderSize = ReadUInt32LittleEndian(headerBytes, 12),
-                    HeaderCrc32 = ReadUInt32LittleEndian(headerBytes, 16),
-                    Reserved = ReadUInt32LittleEndian(headerBytes, 20),
-                    CurrentLba = ReadUInt64LittleEndian(headerBytes, 24),
-                    BackupLba = ReadUInt64LittleEndian(headerBytes, 32),
-                    FirstUsableLba = ReadUInt64LittleEndian(headerBytes, 40),
-                    LastUsableLba = ReadUInt64LittleEndian(headerBytes, 48),
-                    DiskGuid = new Guid(CopyBytes(headerBytes, 56, 16)),
-                    PartitionEntriesLba = ReadUInt64LittleEndian(headerBytes, 72),
-                    PartitionsCount = ReadUInt32LittleEndian(headerBytes, 80),
-                    PartitionEntrySize = ReadUInt32LittleEndian(headerBytes, 84),
-                    PartitionEntryArrayCrc32 = ReadUInt32LittleEndian(headerBytes, 88)
-                };
-
-                if (header.HeaderSize < GptHeaderSize || header.HeaderSize > (uint)sectorSize)
+                var header = ParseGptHeader(headerBytes, sectorSize);
+                if (header == null)
                 {
                     return null;
                 }
 
-                if (header.PartitionsCount == 0 || header.PartitionEntrySize < 56)
+                var gptHeader = header.Value;
+
+                if (!TryReadGptEntries(stream, gptHeader, sectorSize, out var entries, out var entryTableCrcValid))
                 {
                     return null;
                 }
 
-                uint headerSize = header.HeaderSize;
-                var headerBuffer = new byte[headerSize];
-                Buffer.BlockCopy(headerBytes, 0, headerBuffer, 0, (int)headerSize);
-                Array.Clear(headerBuffer, 16, 4);
-                bool headerCrcValid = Crc32.Compute(headerBuffer) == header.HeaderCrc32;
+                bool headerCrcValid = ValidateGptHeaderCrc(headerBytes, gptHeader.HeaderSize, gptHeader.HeaderCrc32);
 
-                if (!TryReadGptEntries(stream, header, sectorSize, out var entries, out var entryTableCrcValid))
+                if (!headerCrcValid || !entryTableCrcValid)
+                {
+                    var backupResult = TryReadGptFromBackup(stream, sectorSize, mutable);
+                    if (backupResult != null)
+                    {
+                        return backupResult;
+                    }
+                }
+
+                return new GptPartitionTable(gptHeader, entries, mutable, sectorSize, headerCrcValid, entryTableCrcValid);
+            }
+            catch (OverflowException)
+            {
+                return null;
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                return null;
+            }
+        }
+
+        private static GptHeader? ParseGptHeader(byte[] headerBytes, int sectorSize)
+        {
+            var header = new GptHeader
+            {
+                Signature = GptSignature,
+                Revision = ReadUInt32LittleEndian(headerBytes, 8),
+                HeaderSize = ReadUInt32LittleEndian(headerBytes, 12),
+                HeaderCrc32 = ReadUInt32LittleEndian(headerBytes, 16),
+                Reserved = ReadUInt32LittleEndian(headerBytes, 20),
+                CurrentLba = ReadUInt64LittleEndian(headerBytes, 24),
+                BackupLba = ReadUInt64LittleEndian(headerBytes, 32),
+                FirstUsableLba = ReadUInt64LittleEndian(headerBytes, 40),
+                LastUsableLba = ReadUInt64LittleEndian(headerBytes, 48),
+                DiskGuid = new Guid(CopyBytes(headerBytes, 56, 16)),
+                PartitionEntriesLba = ReadUInt64LittleEndian(headerBytes, 72),
+                PartitionsCount = ReadUInt32LittleEndian(headerBytes, 80),
+                PartitionEntrySize = ReadUInt32LittleEndian(headerBytes, 84),
+                PartitionEntryArrayCrc32 = ReadUInt32LittleEndian(headerBytes, 88)
+            };
+
+            if (header.HeaderSize < GptHeaderSize || header.HeaderSize > (uint)sectorSize)
+            {
+                return null;
+            }
+
+            if (header.PartitionsCount == 0 || header.PartitionEntrySize < 56)
+            {
+                return null;
+            }
+
+            return header;
+        }
+
+        private static bool ValidateGptHeaderCrc(byte[] headerBytes, uint headerSize, uint expectedCrc)
+        {
+            var headerBuffer = new byte[headerSize];
+            Buffer.BlockCopy(headerBytes, 0, headerBuffer, 0, (int)headerSize);
+            Array.Clear(headerBuffer, 16, 4);
+            return Crc32.Compute(headerBuffer) == expectedCrc;
+        }
+
+        private static GptPartitionTable? TryReadGptFromBackup(Stream stream, int sectorSize, bool mutable)
+        {
+            try
+            {
+                if (stream.Length < (long)2 * sectorSize)
                 {
                     return null;
                 }
 
-                return new GptPartitionTable(header, entries, mutable, sectorSize, headerCrcValid, entryTableCrcValid);
+                long lastSectorOffset = stream.Length - sectorSize;
+                if (!TryReadBytes(stream, lastSectorOffset, sectorSize, out var backupHeaderBytes))
+                {
+                    return null;
+                }
+
+                if (!string.Equals(Encoding.ASCII.GetString(backupHeaderBytes, 0, 8), GptSignature, StringComparison.Ordinal))
+                {
+                    return null;
+                }
+
+                var backupHeader = ParseGptHeader(backupHeaderBytes, sectorSize);
+                if (backupHeader == null)
+                {
+                    return null;
+                }
+
+                var gptBackupHeader = backupHeader.Value;
+
+                bool backupHeaderCrcValid = ValidateGptHeaderCrc(backupHeaderBytes, gptBackupHeader.HeaderSize, gptBackupHeader.HeaderCrc32);
+                if (!backupHeaderCrcValid)
+                {
+                    return null;
+                }
+
+                if (!TryReadGptEntries(stream, gptBackupHeader, sectorSize, out var entries, out var entryTableCrcValid))
+                {
+                    return null;
+                }
+
+                return new GptPartitionTable(gptBackupHeader, entries, mutable, sectorSize, backupHeaderCrcValid, entryTableCrcValid, recoveredFromBackup: true);
             }
             catch (OverflowException)
             {

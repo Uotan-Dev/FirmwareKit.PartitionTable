@@ -1,3 +1,4 @@
+using FirmwareKit.PartitionTable.Exceptions;
 using FirmwareKit.PartitionTable.Interfaces;
 using FirmwareKit.PartitionTable.Models;
 using System;
@@ -81,7 +82,7 @@ namespace FirmwareKit.PartitionTable.Services
         {
             if (!IsMutable)
             {
-                throw new InvalidOperationException("MBR partition table is read-only and cannot be modified.");
+                throw new PartitionOperationException("MBR partition table is read-only and cannot be modified.", "TABLE_READ_ONLY", tableType: PartitionTableType.Mbr);
             }
         }
 
@@ -102,6 +103,22 @@ namespace FirmwareKit.PartitionTable.Services
         /// <param name="index">The zero-based partition index. / 分区索引，从 0 开始。</param>
         /// <param name="entry">The new partition entry. / 新分区项。</param>
         public void SetPartition(int index, MbrPartitionEntry entry)
+        {
+            EnsureMutable();
+            if (index < 0 || index >= _partitions.Length) throw new ArgumentOutOfRangeException(nameof(index));
+            if (entry == null) throw new ArgumentNullException(nameof(entry));
+
+            _partitions[index] = PartitionTableParser.ClonePartitionEntry(entry);
+            RefreshProtectiveStatus();
+        }
+
+        /// <summary>
+        /// Updates specific fields of one partition entry.
+        /// 更新一个分区项的指定字段。
+        /// </summary>
+        /// <param name="index">The zero-based partition index. / 分区索引，从 0 开始。</param>
+        /// <param name="entry">The new partition entry to replace the existing one. / 用于替换的新分区项。</param>
+        public void UpdatePartition(int index, MbrPartitionEntry entry)
         {
             EnsureMutable();
             if (index < 0 || index >= _partitions.Length) throw new ArgumentOutOfRangeException(nameof(index));

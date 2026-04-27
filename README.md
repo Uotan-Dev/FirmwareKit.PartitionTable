@@ -17,7 +17,7 @@ A .NET partition table library for reading, parsing, editing, serializing, deser
 - Supports JSON manifest import/export and manifest-to-table reconstruction via the optional `FirmwareKit.PartitionTable.Json` package.
 - Supports atomic file writes with confirmation token.
 - Uses `Crc32.NET` for CRC-32 calculation.
-- Targets `netstandard2.0`, `net6.0`, `net8.0`, and `net10.0`.
+- Targets `netstandard2.0`, `net8.0`, and `net10.0`.
 
 ## Projects
 
